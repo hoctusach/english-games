@@ -16,7 +16,7 @@ function buildId(): string {
 }
 
 export default defineConfig({
-  base: '/english-shoot-words/',
+  base: '/english-games/',
   define: {
     __BUILD_ID__: JSON.stringify(buildId()),
   },

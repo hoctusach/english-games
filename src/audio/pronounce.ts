@@ -123,7 +123,10 @@ export function prepareSpeech(term: string): void {
   if (usesOnlineVoice()) void onlineUrls(term);
 }
 
-export function speak(word: string, voiceName = getVoiceName()): void {
+// `followUp` (an example sentence) is read right after the word with the same voice.
+// The online recordings only have single words, so without a device voice only the
+// word is read.
+export function speak(word: string, voiceName = getVoiceName(), followUp?: string): void {
   const s = synth();
   if (!s || usesOnlineVoice()) {
     void playOnline(word);
@@ -154,5 +157,12 @@ export function speak(word: string, voiceName = getVoiceName()): void {
     if (event.error !== 'interrupted' && event.error !== 'canceled') fallBack();
   });
   s.speak(utterance);
+  if (followUp) {
+    // queued: plays when the word ends; the next speak() cancels both
+    const sentence = new SpeechSynthesisUtterance(followUp);
+    sentence.lang = utterance.lang;
+    if (voice) sentence.voice = voice;
+    s.speak(sentence);
+  }
   if (speechWorks !== true) window.setTimeout(fallBack, START_TIMEOUT_MS);
 }
