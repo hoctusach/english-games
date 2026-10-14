@@ -111,6 +111,10 @@ export class GameEngine {
     if (new URLSearchParams(location.search).has('debug')) {
       (window as unknown as { __shootWords: () => unknown }).__shootWords = () =>
         this.activeWords.map((w) => ({ term: w.term, x: w.x, y: w.y, scale: w.scale, width: w.width, canvasWidth: this.renderer.widthCss }));
+      (window as unknown as { __shootState: () => unknown }).__shootState = () => ({
+        projectiles: this.projectiles.length,
+        typed: this.validValue,
+      });
     }
     this.wordSetId = wordSet.id;
     this.progress = new ProgressTracker(wordSet.id);
@@ -389,7 +393,9 @@ export class GameEngine {
   }
 
   private handleInput(rawValue: string): void {
-    const raw = rawValue.trim();
+    // only leading spaces are dropped: the space inside a phrase ("you␣didn't") is a
+    // typed key like any letter, and fires a shot
+    const raw = rawValue.replace(/^\s+/, '');
     const value = normalizeForTyping(raw);
 
     if (!value) {
@@ -464,7 +470,8 @@ export class GameEngine {
     this.activeWords = this.activeWords.filter((w) => w.id !== word.id);
     this.progress.recordCorrect(word.term);
     this.resetInput();
-    speak(word.term);
+    // the example sentence, if any, is read right after the word
+    speak(word.term, undefined, word.example?.trim() || undefined);
     playSuccess();
     this.scoreState = applyKill(this.scoreState, word.term, speedScoreMultiplier(this.speedFactor));
     this.events.onScoreChange?.(this.scoreState);
