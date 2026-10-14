@@ -8,7 +8,7 @@ export default defineConfig({
   fullyParallel: true,
   reporter: [['list']],
   use: {
-    baseURL: 'http://localhost:4173/english-shoot-words/',
+    baseURL: 'http://localhost:4173/english-games/',
     serviceWorkers: 'block',
     locale: 'vi-VN',
   },
@@ -18,7 +18,7 @@ export default defineConfig({
   ],
   webServer: {
     command: 'npm run build && npx vite preview --port 4173 --strictPort',
-    url: 'http://localhost:4173/english-shoot-words/',
+    url: 'http://localhost:4173/english-games/',
     reuseExistingServer: true,
     timeout: 120000,
   },

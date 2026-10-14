@@ -4,7 +4,7 @@ A small arcade-style typing game for practicing English vocabulary. Words drift 
 screen with their Vietnamese meaning shown as a hint — type the word to "shoot" it down
 before it reaches the bottom. Correct words are read aloud.
 
-Live: https://hoctusach.github.io/english-shoot-words/
+Live: https://hoctusach.github.io/english-games/
 
 On phones and tablets the game shows its own English keyboard instead of opening the
 system one, so there are no suggestions, autocorrect or Vietnamese input method (Telex)
