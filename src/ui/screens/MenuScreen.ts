@@ -30,6 +30,7 @@ export function renderMenuScreen(root: HTMLElement, app: App): ScreenHandle {
   root.appendChild(wrap);
 
   wrap.appendChild(renderHero(app));
+  wrap.appendChild(renderGameSwitch(app));
   wrap.appendChild(renderNote());
   wrap.appendChild(renderStats().el);
   wrap.appendChild(renderContinue(app));
@@ -104,6 +105,23 @@ function renderHero(app: App): HTMLElement {
   hero.appendChild(toggle);
 
   return hero;
+}
+
+// The two games: this one, and Shadowing (sentence-by-sentence YouTube practice).
+function renderGameSwitch(app: App): HTMLElement {
+  const nav = document.createElement('nav');
+  nav.className = 'game-switch';
+  nav.innerHTML = `
+    <button class="game-tile active" type="button" aria-current="page">
+      <span class="game-tile-icon" aria-hidden="true">🎯</span>
+      <span class="game-tile-text"><b>${t('gameWords')}</b><small>${t('gameWordsTag')}</small></span>
+    </button>
+    <button class="game-tile game-tile-shadow" type="button">
+      <span class="game-tile-icon" aria-hidden="true">🎧</span>
+      <span class="game-tile-text"><b>${t('gameShadow')}</b><small>${t('gameShadowTag')}</small></span>
+    </button>`;
+  nav.querySelector('.game-tile-shadow')!.addEventListener('click', () => app.showShadowHome());
+  return nav;
 }
 
 function renderNote(): HTMLElement {

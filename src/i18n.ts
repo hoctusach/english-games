@@ -128,6 +128,11 @@ const en = {
   statAccuracy: 'accuracy',
   nextChallenger: '🏆 Next challenger',
   playMore: '▶ Keep practising',
+  gameWords: 'Word Shooter',
+  gameWordsTag: 'Type the falling words',
+  gameShadow: 'Shadowing',
+  gameShadowTag: 'Say it back after YouTube',
+  shadowLoadError: 'Could not open Shadowing. Check the connection and try again.',
   mixHint: "Each round mixes 1 new word : 3 words you missed last time (most-missed first). A word you type right won't come back this round; if there aren't enough to review, new words fill in.",
 };
 
@@ -257,6 +262,11 @@ const vi: Record<Key, string> = {
   statAccuracy: 'chính xác',
   nextChallenger: '🏆 Thử thách tiếp (bé khác)',
   playMore: '▶ Luyện tập tiếp',
+  gameWords: 'Bắn từ',
+  gameWordsTag: 'Gõ từ đang rơi',
+  gameShadow: 'Shadowing',
+  gameShadowTag: 'Nói theo video YouTube',
+  shadowLoadError: 'Không mở được Shadowing. Kiểm tra mạng rồi thử lại.',
   mixHint: 'Mỗi lượt trộn 1 từ mới : 3 từ lần gần nhất bạn gõ sai (sai nhiều ra trước). Từ đã gõ đúng trong ván sẽ không lặp lại; thiếu từ ôn thì lấy thêm từ mới.',
 };
 
