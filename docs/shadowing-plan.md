@@ -1,6 +1,6 @@
 # Shadowing — research & plan
 
-Trạng thái: **đề xuất, chưa code**. Mục tiêu: thêm game thứ hai "Shadowing (Nói đuổi)" vào
+Trạng thái: **Phase 1 (MVP) đã code xong và có test** — xem mục 7–9 ở cuối. Phase 2–3 chưa làm. Mục tiêu: thêm game thứ hai "Shadowing (Nói đuổi)" vào
 Word Shooter: người dùng dán 1 link YouTube, app cắt video thành từng câu, phát từng câu,
 dừng cho người dùng nhại lại (hoặc nói đuổi cùng lúc), có thể thu âm để so sánh và chấm điểm.
 
@@ -208,6 +208,69 @@ src/ui/screens/
 3. **Chấp nhận bước dán transcript thủ công** cho MVP (khuyến nghị), hay muốn đầu tư proxy/dịch
    vụ trả phí để chỉ cần dán URL?
 4. Có muốn mình chọn sẵn 2–3 video cho bài seed không (gợi ý chủ đề)?
+
+---
+
+## 7. Quyết định (đã chốt)
+
+| Câu hỏi | Trả lời |
+|---|---|
+| Đối tượng | Cả trẻ em và người lớn, nhiều trình độ → bài chia 3 mức: Trẻ em · Flyers / Trung cấp / Nâng cao |
+| Chấm điểm giọng nói | Để Phase 2 |
+| Dán transcript thủ công | Chấp nhận cho MVP |
+| Video gợi ý | Có: Flyers cho bé, Advanced cho bố/mẹ (+ vài video trung cấp) |
+
+Video gợi ý được lưu dưới dạng **tên video + kênh + từ khoá tìm trên YouTube**, không lưu
+ID: lúc làm, sandbox không vào được YouTube để kiểm tra ID/phụ đề, và ID có thể đổi khi kênh
+đăng lại video. Người dùng bấm "Tìm trên YouTube" → copy link + transcript → "Tạo bài".
+Khi đã có link + transcript chuẩn, có thể đưa thẳng vào app thành bài dựng sẵn.
+
+## 8. Thiết kế đã làm (Phase 1)
+
+**Điều hướng**: Home có 2 ô game (🎯 Bắn từ / 🎧 Shadowing). Ai dùng Shadowing gần nhất thì
+mở app sẽ vào thẳng danh sách bài. Code Shadowing là một chunk riêng (~22 KB gzip), tải lúc
+rảnh nên mở tức thì và không làm chậm game bắn từ.
+
+**Danh sách bài**: "Học tiếp" (bài gần nhất, n/N câu) · Bài của tôi (thumbnail, thời lượng,
+nhãn trình độ, thanh tiến độ, đổi tên/xoá) · Tạo bài mới · Video gợi ý theo tab trình độ.
+
+**Tạo bài**: 3 bước trên một trang, kiểm tra ngay khi gõ/dán: (1) link → thumbnail + ✓;
+(2) transcript → "✓ 12 câu · 3:15" + xem trước 4 câu, cảnh báo nếu là phụ đề tự động không
+dấu câu; hướng dẫn copy transcript mở sẵn cho lần đầu; (3) tên (tự lấy từ YouTube) + trình độ.
+Nút "Lưu & bắt đầu học" chỉ sáng khi đủ.
+
+**Màn học** (mobile: dọc; ≥900px hoặc điện thoại xoay ngang: transcript nằm bên phải):
+- Video 16:9 → thẻ câu (thanh tiến độ trong câu, trạng thái, chữ sáng dần theo nhịp nói, câu
+  kế tiếp mờ) → chế độ + tốc độ → 5 nút lớn (Câu trước · Nghe lại/Lặp câu · ▶/⏸ · Câu sau ·
+  Chữ) → bản chép lời tự cuộn theo câu đang học, bấm câu nào phát câu đó, ✓ câu đã luyện.
+- Đến lượt nói: thẻ viền xanh, "🎤 Đến lượt bạn", nút ▶ chuyển xanh với vòng đếm ngược.
+- Cài đặt (⚙): mỗi câu phát 1–3 lần, thời gian để nói Ngắn/Vừa/Dài, tự sang câu, mở YouTube.
+- Sửa câu: gộp với câu sau / tách đôi / xoá câu; tiến độ được dời theo.
+- Xong bài: hộp chúc mừng + pháo giấy, "Học lại từ đầu" / "Bài khác".
+- Phím tắt: Space ▶/⏸, ←/→, R nghe lại, T đổi chế độ chữ. Ẩn app → tự tạm dừng.
+- Lỗi: video cấm nhúng / không tồn tại / mất mạng → thông báo rõ + "Thử lại" / "Mở trên YouTube".
+
+**Mượt & đúng giờ**: logic chạy mỗi 50 ms, hình vẽ theo `requestAnimationFrame` (chỉ đổi
+`transform`/class, không vẽ lại DOM). YouTube chỉ báo thời gian vài lần mỗi giây và báo
+giờ cũ ngay sau khi tua, nên lớp bọc player giữ mốc tua cho tới khi YouTube bắt kịp và tự
+nội suy thời gian giữa hai lần báo; bộ điều khiển câu còn tự tua lại nếu video không tới.
+
+## 9. Kiểm thử
+
+| Lớp | Công cụ | Nội dung |
+|---|---|---|
+| Typecheck | `npm run typecheck` | toàn bộ `src/` (chạy cả trước khi deploy) |
+| Unit (75 test) | `npm test` (vitest) | đọc link YouTube; transcript YouTube copy (mốc riêng dòng/cùng dòng, nhãn "5 seconds", giờ, [Music]), .srt, .vtt (cả phụ đề tự động lặp dòng); chia câu (dấu câu, viết tắt, ngoặc kép, câu dài, khoảng lặng, phụ đề không dấu); gộp/tách/xoá; vòng luyện (khoảng nghỉ, lặp N lần, tự/không tự sang câu, tạm dừng, nghe lại khi YouTube báo giờ cũ, tua lại khi kẹt, nói đuổi, lặp câu, điều khiển từ ngoài, hết bài); lưu trữ (dữ liệu hỏng, đầy bộ nhớ, tiến độ khi số câu đổi) |
+| End-to-end (21 kịch bản × mobile + desktop) | `npm run test:e2e` (Playwright, bản build thật, YouTube giả lập) | vào/ra Shadowing; tạo bài từ link + transcript dán và từ video gợi ý + file .srt; nghe & nhắc (video dừng đúng cuối câu, sang câu); tạm dừng/tiếp/nghe lại/câu trước/sau; bấm câu trong danh sách; lặp 2 lần + không tự sang câu; nói đuổi + lặp câu; chế độ chữ + tốc độ (nhớ sau khi tải lại); phím tắt; cài đặt; xong bài; sửa câu (còn sau khi tải lại); tiến độ + "Học tiếp"; ẩn app tự dừng; video cấm nhúng; mất mạng rồi thử lại; không tràn ngang; điện thoại nhỏ 360×640 vẫn thấy transcript |
+
+**Cần thử trên máy thật** (giả lập không thay được): iPhone Safari (phát lần đầu bằng chạm,
+`playsinline`), Android Chrome, tốc độ 0.5× của YouTube thật, video có quảng cáo.
+
+## 10. Việc tiếp theo
+
+- Phase 2: thu âm & nghe lại cạnh bản gốc; chấm điểm bằng Web Speech API (tô xanh/đỏ từng từ).
+- Phase 3: chép chính tả bằng bàn phím của game; thêm từ/câu khó vào word set.
+- Biến các video gợi ý thành bài dựng sẵn (cần link + transcript chuẩn).
 
 ---
 

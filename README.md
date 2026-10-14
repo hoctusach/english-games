@@ -88,6 +88,35 @@ No player names or word lists are sent. It is off until a Website ID is set:
 2. Copy its **Website ID** into `UMAMI_WEBSITE_ID` in `src/analytics.ts` and push.
 3. Visitors, devices, countries and the events above then show in the Umami dashboard.
 
+## Shadowing
+
+The second game (🎧 on Home): practise speaking along with any YouTube video, one sentence
+at a time. A lesson is a YouTube link plus its transcript with times, pasted from YouTube's
+"Show transcript" panel or picked as a `.srt`/`.vtt` file (YouTube doesn't let a web page
+fetch captions itself — see `docs/shadowing-plan.md`). The app cuts it into sentences and
+plays them in the embedded YouTube player:
+
+- **Listen & repeat (Nghe & nhắc lại)**: plays a sentence, stops, waits while you say it
+  back (a green countdown ring), then plays it again or moves on.
+- **Shadow (Nói đuổi)**: the video runs on and you speak along; one sentence can be looped.
+- Speed 0.5×–1.25×, full text / first letters / hidden, a tappable transcript, merge or
+  split badly cut sentences, keyboard shortcuts on computers.
+- Suggested videos for kids (A2 Flyers), intermediate and advanced learners.
+
+Lessons, progress and settings are saved in `localStorage` like the word sets (and are
+part of backups). The code lives in `src/shadowing/` and loads only when Shadowing opens.
+
+## Tests
+
+```sh
+npm run typecheck
+npm test          # unit tests (vitest): transcript parsing, sentence cutting, the practice loop, storage
+npm run test:e2e  # end-to-end (Playwright, Chromium) against the production build,
+                  # with YouTube replaced by a fake player (e2e/fake-youtube.js)
+```
+
+Typecheck and unit tests also run before every deploy.
+
 ## Development
 
 ```sh
