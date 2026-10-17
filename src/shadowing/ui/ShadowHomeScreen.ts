@@ -212,7 +212,7 @@ function renderSuggestions(app: App, lessons: ShadowLesson[]): HTMLElement {
         }
         <div class="sh-suggest-body">
           <h3>${escapeHtml(s.title)}</h3>
-          <p class="sh-suggest-meta">${escapeHtml(s.channel)} · ${st('minutes', s.minutes)}</p>
+          <p class="sh-suggest-meta"><span class="sh-topic">${escapeHtml(s.topic[lang])}</span>${escapeHtml(s.channel)} · ${st('minutes', s.minutes)}</p>
           <p class="sh-suggest-note">${escapeHtml(s.note[lang])}</p>
           <div class="sh-suggest-actions">
             ${

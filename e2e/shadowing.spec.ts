@@ -90,6 +90,8 @@ test.describe('entry', () => {
     // level tabs
     await page.locator('.sh-tab[data-level="advanced"]').click();
     await expect(page.locator('.sh-suggest h3').first()).toContainText('Matt Cutts');
+    await expect(page.locator('.sh-suggest h3').nth(1)).toContainText('How to be confident');
+    await expect(page.locator('.sh-suggest .sh-topic').nth(1)).toHaveText('Tự tin · Thuyết trình');
     await page.locator('.sh-tab[data-level="kids"]').click();
     await expect(page.locator('.sh-suggest h3').first()).toContainText('The greedy hippo');
 

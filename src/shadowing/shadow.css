@@ -1578,3 +1578,14 @@
 .sh-lesson-meta > span {
   white-space: nowrap;
 }
+
+.sh-topic {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(167, 139, 250, 0.16);
+  color: #c4b5fd;
+  font-size: 11px;
+  font-weight: 600;
+}
