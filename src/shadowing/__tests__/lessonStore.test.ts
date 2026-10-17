@@ -128,8 +128,19 @@ describe('progress', () => {
 describe('prefs', () => {
   it('falls back to defaults for unknown values', () => {
     storage.setItem(SHADOW_PREFS_KEY, JSON.stringify({ mode: 'shadow', rate: 3, repeat: 2, gapFactor: 'x', autoNext: false, textMode: 'hint' }));
-    expect(loadPrefs()).toEqual({ mode: 'shadow', rate: 1, repeat: 2, gapFactor: 1, autoNext: false, textMode: 'hint' });
+    expect(loadPrefs()).toEqual({ mode: 'shadow', rate: 1, repeat: 2, gapFactor: 1, autoNext: false, textMode: 'hint', chunkSeconds: 4 });
     savePrefs({ ...loadPrefs(), rate: 0.75 });
     expect(loadPrefs().rate).toBe(0.75);
+  });
+});
+
+describe('lessons without transcript', () => {
+  it('may have no sentences until the video loads', () => {
+    const lesson = createLesson({ videoId: 'v', title: 't', level: 'kids', segments: [], source: 'none' });
+    expect(getLesson(lesson.id)?.segments).toEqual([]);
+    updateLesson(lesson.id, { segments: [{ start: 0, end: 4, text: '' }] });
+    expect(getLesson(lesson.id)?.segments.length).toBe(1);
+    expect(loadLessonProgress('x', 0)).toMatchObject({ reps: [], last: 0 });
+    expect(loadPrefs().chunkSeconds).toBe(4);
   });
 });

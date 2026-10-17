@@ -294,3 +294,15 @@ describe('outside the app', () => {
     expect(media.rate).toBe(0.5);
   });
 });
+
+describe('reset', () => {
+  it('stops the video and goes back to idle on a sentence', () => {
+    const player = make({ mode: 'shadow' });
+    player.toggle();
+    run(player, 1);
+    player.setLoop(true);
+    player.reset(2);
+    expect(player.snapshot()).toMatchObject({ phase: 'idle', index: 2, loop: false });
+    expect(media.playing).toBe(false);
+  });
+});

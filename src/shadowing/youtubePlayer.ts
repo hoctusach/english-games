@@ -9,6 +9,7 @@ interface YTPlayer {
   pauseVideo(): void;
   seekTo(seconds: number, allowSeekAhead: boolean): void;
   getCurrentTime(): number;
+  getDuration?(): number;
   setPlaybackRate(rate: number): void;
   getVideoData?(): { title?: string };
   destroy(): void;
@@ -162,6 +163,16 @@ export class YouTubeMedia implements MediaLike {
     }
     if (!this.playing) return raw;
     return raw + Math.min(0.5, ((now - this.lastRawAt) / 1000) * this.rate);
+  }
+
+  // seconds; 0 while YouTube doesn't know yet
+  duration(): number {
+    if (!this.ready) return 0;
+    try {
+      return Number(this.player.getDuration?.()) || 0;
+    } catch {
+      return 0;
+    }
   }
 
   title(): string {

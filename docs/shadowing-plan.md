@@ -274,6 +274,21 @@ nội suy thời gian giữa hai lần báo; bộ điều khiển câu còn tự
 
 ---
 
+## 11. Học không cần transcript (đã làm)
+
+Dán link là học được. Không có transcript thì app không biết câu bắt đầu/kết thúc ở đâu, nên:
+
+- **Chia theo thời gian**: khi video tải xong lần đầu, app lấy độ dài video và cắt thành
+  đoạn 3 / 4 / 6 giây (⚙ Cài đặt). Mỗi đoạn hiện "🎧 Đoạn n · 0:08 – 0:12" thay cho câu chữ;
+  mọi chế độ (nghe & nhắc, nói đuổi, lặp, tốc độ, gộp/tách) dùng như bình thường.
+- **✂ Đánh dấu câu**: video phát từ đầu, người học bấm ✂ ngay khi người nói hết một câu
+  (Space/Enter trên máy tính; "Bỏ dấu" để xoá dấu vừa bấm). App trừ 0,2 giây phản xạ, bỏ qua
+  2 lần bấm cách nhau dưới 0,5 giây; phần sau dấu cuối vẫn chia theo thời gian để học tiếp.
+- **Video gợi ý có link thật** (tìm qua web search, ưu tiên kênh chính thức): "▶ Học ngay"
+  tạo bài không chữ và vào học luôn; "➕ Kèm transcript" mở màn tạo bài với link điền sẵn.
+
+---
+
 ## Nguồn tham khảo
 
 - [RecEcho: YouTube Shadowing Master](https://chromewebstore.google.com/detail/noefpifnpmfmdeaoejjbdegbpjhedhib)

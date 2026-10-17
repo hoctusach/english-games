@@ -1,22 +1,27 @@
 import type { App } from '@/App';
 import type { ScreenHandle } from '@/ui/ScreenManager';
-import type { LessonLevel, ShadowLesson } from '@/shadowing/types';
+import type { LessonLevel, Segment, ShadowLesson } from '@/shadowing/types';
 import { LESSON_LEVELS } from '@/shadowing/types';
 import {
+  createLesson,
+  setLastLessonId,
   deleteLesson,
   getLastLessonId,
   loadLessonProgress,
   loadLessons,
   practisedCount,
   StorageFullError,
+  clearLessonProgress,
   updateLesson,
 } from '@/shadowing/lessonStore';
-import { SUGGESTIONS } from '@/shadowing/suggestions';
-import { formatClock } from '@/shadowing/segment';
+import { SUGGESTIONS, type VideoSuggestion } from '@/shadowing/suggestions';
+import { parseTranscript } from '@/shadowing/transcriptParse';
+import { buildSegments, formatClock } from '@/shadowing/segment';
 import { searchUrl, thumbnailUrl } from '@/shadowing/youtubeUrl';
 import { levelLabel, st } from '@/shadowing/strings';
 import { escapeHtml } from '@/utils/dom';
 import { getLang } from '@/i18n';
+import { track } from '@/analytics';
 import { SHADOW_TAB_KEY as TAB_KEY } from '@/utils/storageKeys';
 
 export function renderShadowHome(root: HTMLElement, app: App): ScreenHandle {
@@ -52,10 +57,17 @@ function renderHeader(app: App): HTMLElement {
   return header;
 }
 
-function lessonMeta(lesson: ShadowLesson): { done: number; total: number; length: string } {
+function lessonMeta(lesson: ShadowLesson): { done: number; total: number; length: string; progressText: string } {
   const progress = loadLessonProgress(lesson.id, lesson.segments.length);
   const last = lesson.segments[lesson.segments.length - 1];
-  return { done: practisedCount(progress), total: lesson.segments.length, length: formatClock(last.end) };
+  const done = practisedCount(progress);
+  const total = lesson.segments.length;
+  const progressText = !total
+    ? st('notCutYet')
+    : lesson.source === 'none'
+      ? st('piecesDone', done, total)
+      : st('sentencesDone', done, total);
+  return { done, total, length: last ? formatClock(last.end) : '', progressText };
 }
 
 function renderContinue(app: App, lessons: ShadowLesson[]): HTMLElement | null {
@@ -70,7 +82,7 @@ function renderContinue(app: App, lessons: ShadowLesson[]): HTMLElement | null {
     <span class="cta-icon">▶</span>
     <span class="cta-text">
       <span class="cta-title">${st('continueLesson')}</span>
-      <span class="cta-sub">${escapeHtml(lesson.title)} · ${st('sentencesDone', meta.done, meta.total)}</span>
+      <span class="cta-sub">${escapeHtml(lesson.title)} · ${meta.progressText}</span>
     </span>`;
   btn.addEventListener('click', () => app.showShadowLesson(lesson.id));
   return btn;
@@ -119,13 +131,14 @@ function renderLessonCard(app: App, lesson: ShadowLesson, refresh: () => void): 
     <button class="sh-lesson-open" type="button">
       <span class="sh-thumb">
         <img src="${thumbnailUrl(lesson.videoId)}" alt="" loading="lazy" decoding="async" onerror="this.style.visibility='hidden'">
-        <span class="sh-thumb-time">${meta.length}</span>
+        ${meta.length ? `<span class="sh-thumb-time">${meta.length}</span>` : ''}
       </span>
       <span class="sh-lesson-body">
         <span class="sh-lesson-title">${escapeHtml(lesson.title)}</span>
         <span class="sh-lesson-meta">
           <span class="sh-level sh-level-${lesson.level}">${levelLabel(lesson.level, true)}</span>
-          <span>${st('sentencesDone', meta.done, meta.total)}</span>
+          ${lesson.source === 'none' ? `<span class="sh-notext">${st('noTextBadge')}</span>` : ''}
+          <span>${meta.progressText}</span>
         </span>
         <span class="sh-lesson-bar" aria-hidden="true"><span style="width:${pct}%"></span></span>
       </span>
@@ -155,6 +168,11 @@ function renderLessonCard(app: App, lesson: ShadowLesson, refresh: () => void): 
     refresh();
   });
   return card;
+}
+
+function builtInSegments(s: VideoSuggestion): Segment[] {
+  const parsed = s.transcript ? parseTranscript(s.transcript) : null;
+  return parsed ? buildSegments(parsed.captions) : [];
 }
 
 function readTab(): LessonLevel {
@@ -194,22 +212,63 @@ function renderSuggestions(app: App, lessons: ShadowLesson[]): HTMLElement {
       const card = document.createElement('article');
       card.className = 'sh-suggest';
       card.innerHTML = `
-        <span class="sh-suggest-emoji" aria-hidden="true">${s.emoji}</span>
+        ${
+          s.videoId
+            ? `<span class="sh-suggest-thumb" aria-hidden="true"><img src="${thumbnailUrl(s.videoId)}" alt="" loading="lazy" decoding="async" onerror="this.style.visibility='hidden'"><span>${s.emoji}</span></span>`
+            : `<span class="sh-suggest-emoji" aria-hidden="true">${s.emoji}</span>`
+        }
         <div class="sh-suggest-body">
-          <h3>${escapeHtml(s.title)}</h3>
-          <p class="sh-suggest-meta">${escapeHtml(s.channel)} · ${st('minutes', s.minutes)}</p>
+          <h3>${escapeHtml(s.title)}${s.transcript ? ` <span class="sh-hastext">${st('hasText')}</span>` : ''}</h3>
+          <p class="sh-suggest-meta"><span class="sh-topic">${escapeHtml(s.topic[lang])}</span>${escapeHtml(s.channel)} · ${st('minutes', s.minutes)}</p>
           <p class="sh-suggest-note">${escapeHtml(s.note[lang])}</p>
           <div class="sh-suggest-actions">
             ${
               existing
-                ? `<span class="sh-have">${st('haveLesson')}</span><button class="btn btn-primary btn-sm sh-open" type="button">${st('study')}</button>`
-                : `<a class="btn btn-sm" href="${searchUrl(s.query)}" target="_blank" rel="noopener">${st('findOnYouTube')}</a>
-                   <button class="btn btn-primary btn-sm sh-make" type="button">${st('makeLesson')}</button>`
+                ? `<span class="sh-have">${st('haveLesson')}</span><button class="btn btn-primary btn-sm sh-open" type="button">${st('study')}</button>
+                   ${existing.source === 'none' && s.transcript ? `<button class="btn btn-sm sh-upgrade" type="button">${st('addText')}</button>` : ''}`
+                : s.videoId
+                  ? `<button class="btn btn-primary btn-sm sh-now" type="button">${st('learnNow')}</button>
+                     ${s.transcript ? '' : `<button class="btn btn-sm sh-make" type="button">${st('addTranscript')}</button>`}`
+                  : `<a class="btn btn-sm" href="${searchUrl(s.query)}" target="_blank" rel="noopener">${st('findOnYouTube')}</a>
+                     <button class="btn btn-primary btn-sm sh-make" type="button">${st('makeLesson')}</button>`
             }
           </div>
         </div>`;
       card.querySelector('.sh-open')?.addEventListener('click', () => app.showShadowLesson(existing!.id));
       card.querySelector('.sh-make')?.addEventListener('click', () => app.showShadowNew(s.id));
+      // straight into practice: with the built-in transcript when there is one,
+      // otherwise without text (cut by time)
+      card.querySelector('.sh-now')?.addEventListener('click', () => {
+        try {
+          const segments = builtInSegments(s);
+          const lesson = createLesson({
+            videoId: s.videoId!,
+            title: s.title,
+            level: s.level,
+            segments,
+            source: segments.length ? 'youtube' : 'none',
+            suggestionId: s.id,
+          });
+          setLastLessonId(lesson.id);
+          track('shadow_lesson_create', { sentences: segments.length, format: segments.length ? 'builtin' : 'none', level: s.level, suggested: true });
+          app.showShadowLesson(lesson.id);
+        } catch (err) {
+          alert(err instanceof StorageFullError ? st('storageFull') : String(err));
+        }
+      });
+      // a lesson made before the transcript was added: give it the sentences
+      card.querySelector('.sh-upgrade')?.addEventListener('click', () => {
+        const segments = builtInSegments(s);
+        if (!existing || !segments.length) return;
+        try {
+          updateLesson(existing.id, { segments, source: 'youtube' });
+          clearLessonProgress(existing.id);
+          setLastLessonId(existing.id);
+          app.showShadowLesson(existing.id);
+        } catch (err) {
+          alert(err instanceof StorageFullError ? st('storageFull') : String(err));
+        }
+      });
       list.appendChild(card);
     }
   };

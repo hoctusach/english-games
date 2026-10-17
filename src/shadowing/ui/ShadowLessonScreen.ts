@@ -2,6 +2,7 @@ import type { App } from '@/App';
 import type { ScreenHandle } from '@/ui/ScreenManager';
 import type { Segment, ShadowLesson, ShadowMode, TextMode } from '@/shadowing/types';
 import {
+  CHUNK_SECONDS,
   GAP_FACTORS,
   getLesson,
   loadLessonProgress,
@@ -18,7 +19,7 @@ import {
 } from '@/shadowing/lessonStore';
 import { SegmentPlayer, type PlayerSnapshot } from '@/shadowing/SegmentPlayer';
 import { loadYouTubeApi, YouTubeMedia, type PlayerErrorKind } from '@/shadowing/youtubePlayer';
-import { formatClock, mergeWithNext, removeSegment, splitSegment } from '@/shadowing/segment';
+import { chunkByTime, formatClock, mergeWithNext, removeSegment, segmentsFromMarks, splitSegment } from '@/shadowing/segment';
 import { maskWord, timedWords, type TimedWord } from '@/shadowing/textMask';
 import { watchUrl } from '@/shadowing/youtubeUrl';
 import { st } from '@/shadowing/strings';
@@ -85,11 +86,26 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
           <button class="sh-tbtn sh-next" type="button">${icons.next}<small>${st('btnNext')}</small></button>
           <button class="sh-tbtn sh-textmode" type="button"><span class="sh-ico"></span><small></small></button>
         </div>
+        <div class="sh-mark" hidden>
+          <p class="sh-mark-help">${st('markHelp')}</p>
+          <div class="sh-mark-row">
+            <button class="btn sh-mark-undo" type="button">${st('markUndo')}</button>
+            <button class="sh-mark-cut" type="button">✂<small>${st('markCut')}</small></button>
+            <button class="btn btn-primary sh-mark-done" type="button">${st('markDone')}</button>
+          </div>
+          <div class="sh-mark-foot">
+            <span class="sh-mark-count" aria-live="polite"></span>
+            <button class="btn btn-link sh-mark-cancel" type="button">${st('markCancel')}</button>
+          </div>
+        </div>
       </div>
       <aside class="sh-side">
         <div class="sh-side-head">
           <h2>${st('transcript')} <span class="sh-side-count"></span></h2>
-          <button class="btn btn-sm sh-edit-toggle" type="button">${st('editSentences')}</button>
+          <div class="sh-side-actions">
+            <button class="btn btn-sm sh-mark-start" type="button" hidden>${st('markStart')}</button>
+            <button class="btn btn-sm sh-edit-toggle" type="button">${st('editSentences')}</button>
+          </div>
         </div>
         <ol class="sh-list"></ol>
       </aside>
@@ -124,6 +140,9 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
   const listEl = $('.sh-list');
   const sideCount = $('.sh-side-count');
   const editToggle = $<HTMLButtonElement>('.sh-edit-toggle');
+  const markStartBtn = $<HTMLButtonElement>('.sh-mark-start');
+  const markPanel = $('.sh-mark');
+  const markCount = $('.sh-mark-count');
   const sheet = $('.sh-sheet');
   const sheetCard = $('.sh-sheet-card');
   const finishEl = $('.sh-finish');
@@ -155,6 +174,13 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
   let dirty = false;
 
   const segments = (): Segment[] => lesson.segments;
+  // no transcript: pieces cut by time or by the player's own marks, no text to show
+  const textless = lesson.source === 'none';
+  let marking = false;
+  let marks: number[] = [];
+  let durationTries = 0;
+
+  markStartBtn.hidden = !textless;
 
   // ---------- the video ----------
 
@@ -195,8 +221,7 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
         media = new YouTubeMedia(api, videoHost, lesson.videoId, {
           onReady: () => {
             if (destroyed) return;
-            ready = true;
-            showOverlay('');
+            setupPlayer();
             const title = media?.title();
             if (title && lesson.title === lesson.videoId) {
               try {
@@ -206,25 +231,73 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
               }
               titleEl.textContent = lesson.title;
             }
-            drawControls();
           },
           onError: (kind) => failed(errorMessage(kind), kind === 'other'),
-          onExternalPlay: () => player?.externalPlay(),
-          onExternalPause: () => player?.externalPause(),
-          onEnded: () => player?.externalEnded(),
+          onExternalPlay: () => {
+            if (!marking) player?.externalPlay();
+          },
+          onExternalPause: () => {
+            if (!marking) player?.externalPause();
+          },
+          onEnded: () => (marking ? finishMarking() : player?.externalEnded()),
         });
-        player = new SegmentPlayer(
-          media,
-          segments(),
-          { mode: prefs.mode, rate: prefs.rate, repeat: prefs.repeat, gapFactor: prefs.gapFactor, autoNext: prefs.autoNext },
-          { onChange, onSegmentDone, onFinished },
-          snap.index,
-        );
       },
       () => {
         if (!destroyed) failed(st('apiError'), true);
       },
     );
+  }
+
+  // The practice loop starts once the video is ready. A lesson without transcript
+  // is first cut into pieces, which needs the video's length.
+  function setupPlayer(): void {
+    if (destroyed || !media) return;
+    if (!segments().length) {
+      const duration = media.duration();
+      if (!duration) {
+        if (durationTries++ < 20) window.setTimeout(setupPlayer, 250);
+        else failed(st('otherError'), true);
+        return;
+      }
+      replaceSegments(chunkByTime(0, duration, prefs.chunkSeconds), 0);
+    }
+    player = new SegmentPlayer(
+      media,
+      segments(),
+      { mode: prefs.mode, rate: prefs.rate, repeat: prefs.repeat, gapFactor: prefs.gapFactor, autoNext: prefs.autoNext },
+      { onChange, onSegmentDone, onFinished },
+      snap.index,
+    );
+    ready = true;
+    showOverlay('');
+    drawSentence();
+    drawStatus();
+    drawControls();
+  }
+
+  // A new set of pieces (re-cut by time, or marked by hand): progress starts over.
+  function replaceSegments(next: Segment[], index: number): void {
+    if (!next.length) return;
+    try {
+      lesson = updateLesson(lesson.id, { segments: next }) ?? lesson;
+    } catch (err) {
+      alert(err instanceof StorageFullError ? st('storageFull') : String(err));
+      return;
+    }
+    progress.reps = next.map(() => 0);
+    progress.last = index;
+    saveNow();
+    if (player) {
+      player.reset(index);
+      player.setSegments(segments(), index);
+    } else {
+      snap = { ...snap, index, phase: 'idle' };
+    }
+    textEl.dataset.key = '';
+    drawSentence();
+    drawStatus();
+    drawControls();
+    drawList();
   }
 
   // ---------- player events ----------
@@ -262,6 +335,37 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
 
   function drawSentence(): void {
     const seg = segments()[snap.index];
+    if (!seg) {
+      textEl.dataset.key = '';
+      textEl.innerHTML = `<span class="sh-piece-wait">${st('loadingVideo')}</span>`;
+      nextLineEl.textContent = '';
+      countEl.textContent = '';
+      words = [];
+      wordEls = [];
+      return;
+    }
+    if (!seg.text) {
+      const key = `piece|${snap.index}|${seg.start}|${seg.end}`;
+      if (textEl.dataset.key !== key) {
+        const indexChanged = shownIndex !== snap.index;
+        shownIndex = snap.index;
+        textEl.dataset.key = key;
+        textEl.classList.remove('sh-text-hidden', 'sh-text-long');
+        textEl.innerHTML = `
+          <span class="sh-piece">🎧 ${st('pieceN', snap.index + 1)}</span>
+          <span class="sh-piece-time">${formatClock(seg.start)} – ${formatClock(seg.end)}</span>`;
+        words = [];
+        wordEls = [];
+        nextLineEl.textContent = '';
+        if (indexChanged) {
+          textEl.classList.remove('sh-enter');
+          void textEl.offsetWidth;
+          textEl.classList.add('sh-enter');
+        }
+      }
+      countEl.textContent = st('sentenceOf', snap.index + 1, segments().length);
+      return;
+    }
     const key = `${snap.index}|${prefs.textMode}|${revealed === snap.index}|${seg.text}`;
     if (textEl.dataset.key === key) return;
     const indexChanged = shownIndex !== snap.index;
@@ -345,14 +449,28 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
     const rate = prefs.rate;
     speedBtn.textContent = `${rate < 1 ? '🐢 ' : rate > 1 ? '🐇 ' : ''}${rate}×`;
 
-    const textIcon = prefs.textMode === 'show' ? icons.textShow : prefs.textMode === 'hint' ? icons.textHint : icons.textHide;
+    // without transcript there's no text to hide: the button marks sentences instead
+    const textIcon = textless
+      ? '<span class="sh-ico-text">✂</span>'
+      : prefs.textMode === 'show'
+        ? icons.textShow
+        : prefs.textMode === 'hint'
+          ? icons.textHint
+          : icons.textHide;
     textBtn.querySelector('.sh-ico')!.innerHTML = textIcon;
-    textBtn.querySelector('small')!.textContent =
-      prefs.textMode === 'show' ? st('textShow') : prefs.textMode === 'hint' ? st('textHint') : st('textHide');
+    textBtn.querySelector('small')!.textContent = textless
+      ? st('markShort')
+      : prefs.textMode === 'show'
+        ? st('textShow')
+        : prefs.textMode === 'hint'
+          ? st('textHint')
+          : st('textHide');
+    textBtn.disabled = textless && !ready;
   }
 
   function drawList(): void {
     sideCount.textContent = String(segments().length);
+    $('.sh-side-head h2').firstChild!.textContent = `${textless ? st('pieces') : st('transcript')} `;
     listEl.classList.toggle('editing', editing);
     editToggle.textContent = editing ? st('doneEditing') : st('editSentences');
     const last = segments().length - 1;
@@ -362,14 +480,14 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
         <li class="sh-row${progress.reps[i] ? ' done' : ''}${i === snap.index ? ' current' : ''}" data-i="${i}">
           <button class="sh-row-main" type="button" data-act="go">
             <span class="sh-time">${formatClock(seg.start)}</span>
-            <span class="sh-row-text">${escapeHtml(seg.text)}</span>
+            <span class="sh-row-text${seg.text ? '' : ' sh-row-piece'}">${seg.text ? escapeHtml(seg.text) : `🎧 ${st('pieceN', i + 1)}`}</span>
             <span class="sh-row-done" aria-hidden="true">✓</span>
           </button>
           ${
             editing
               ? `<div class="sh-row-edit">
                   ${i < last ? `<button class="btn btn-sm" type="button" data-act="merge">⤵ ${st('mergeNext')}</button>` : ''}
-                  ${seg.text.includes(' ') ? `<button class="btn btn-sm" type="button" data-act="split">✂ ${st('split')}</button>` : ''}
+                  ${seg.text.includes(' ') || (!seg.text && seg.end - seg.start >= 1.6) ? `<button class="btn btn-sm" type="button" data-act="split">✂ ${st('split')}</button>` : ''}
                   ${last > 0 ? `<button class="btn btn-sm btn-danger-soft" type="button" data-act="remove">🗑 ${st('remove')}</button>` : ''}
                 </div>`
               : ''
@@ -433,6 +551,10 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
     const now = performance.now();
     const dt = Math.min(1, (now - lastTick) / 1000);
     lastTick = now;
+    if (marking) {
+      drawMarkCount();
+      return;
+    }
     if (!player) return;
     player.tick();
     if (snap.phase === 'playing' || snap.phase === 'gap') {
@@ -488,15 +610,16 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
   });
 
   const cycleText = () => {
+    if (textless) return;
     setPref('textMode', TEXT_MODES[(TEXT_MODES.indexOf(prefs.textMode) + 1) % TEXT_MODES.length]);
     revealed = -1;
     drawSentence();
     drawControls();
   };
-  textBtn.addEventListener('click', cycleText);
+  textBtn.addEventListener('click', () => (textless ? startMarking() : cycleText()));
 
   card.addEventListener('click', () => {
-    if (prefs.textMode === 'show') return;
+    if (textless || prefs.textMode === 'show') return;
     revealed = revealed === snap.index ? -1 : snap.index;
     drawSentence();
   });
@@ -576,6 +699,13 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
         v < 1 ? st('gapShort') : v > 1 ? st('gapLong') : st('gapMedium'),
       )}</div>
       <label class="sh-switch"><input type="checkbox" class="sh-auto"${prefs.autoNext ? ' checked' : ''}><span>${st('autoNext')}</span></label>
+      ${
+        textless
+          ? `<div class="sh-field"><span>${st('chunkLength')}</span>${choice('chunkSeconds', CHUNK_SECONDS, prefs.chunkSeconds, (v) => st('seconds', v))}</div>
+             <p class="sh-hint">${st('chunkHint')}</p>
+             <button class="btn sh-sheet-mark" type="button">${st('markStart')}</button>`
+          : ''
+      }
       <p class="sh-hint sh-shortcuts">${st('shortcuts')}</p>
       <div class="sh-sheet-links">
         <a class="btn btn-sm" href="${watchUrl(lesson.videoId, segments()[snap.index]?.start ?? 0)}" target="_blank" rel="noopener">${st('openYouTube')}</a>
@@ -590,7 +720,21 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
   sheet.addEventListener('click', (event) => {
     const target = event.target as HTMLElement;
     if (target === sheet || target.closest('.sh-sheet-close')) return closeSheet();
+    if (target.closest('.sh-sheet-mark')) {
+      closeSheet();
+      startMarking();
+      return;
+    }
     const chip = target.closest<HTMLButtonElement>('.sh-choice .sh-chip');
+    if (chip && chip.closest<HTMLElement>('.sh-choice')!.dataset.name === 'chunkSeconds') {
+      const value = Number(chip.dataset.value);
+      chip.parentElement!.querySelectorAll('.sh-chip').forEach((c) => c.classList.toggle('active', c === chip));
+      if (value === prefs.chunkSeconds || !media) return;
+      setPref('chunkSeconds', value);
+      const duration = media.duration() || segments()[segments().length - 1]?.end || 0;
+      replaceSegments(chunkByTime(0, duration, value), 0);
+      return;
+    }
     if (chip) {
       const name = chip.closest<HTMLElement>('.sh-choice')!.dataset.name as 'repeat' | 'gapFactor';
       const value = Number(chip.dataset.value);
@@ -606,6 +750,80 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
     setPref('autoNext', input.checked);
     player?.updateSettings({ autoNext: input.checked });
   });
+
+  // ---------- marking sentences by hand (no transcript) ----------
+
+  // the time between hearing a sentence end and tapping
+  const REACTION_SECONDS = 0.2;
+
+  function startMarking(): void {
+    if (!player || !media || !ready) return;
+    player.reset(snap.index);
+    marking = true;
+    marks = [];
+    wrap.classList.add('sh-marking');
+    markPanel.hidden = false;
+    statusEl.textContent = st('markStatus');
+    hideFinish();
+    media.seek(0);
+    media.play();
+    drawMarkCount();
+    $<HTMLButtonElement>('.sh-mark-cut').focus();
+  }
+
+  function cutHere(): void {
+    if (!marking || !media) return;
+    const t = media.time() - REACTION_SECONDS;
+    const last = marks[marks.length - 1] ?? 0;
+    if (t - last < 0.5) return;
+    marks.push(t);
+    drawMarkCount();
+    const cut = $('.sh-mark-cut');
+    cut.classList.remove('sh-pop');
+    void cut.offsetWidth;
+    cut.classList.add('sh-pop');
+  }
+
+  function undoCut(): void {
+    marks.pop();
+    drawMarkCount();
+  }
+
+  function stopMarking(): void {
+    marking = false;
+    wrap.classList.remove('sh-marking');
+    markPanel.hidden = true;
+    media?.pause();
+    drawStatus();
+  }
+
+  function finishMarking(): void {
+    if (!marking || !media) return;
+    const duration = media.duration() || segments()[segments().length - 1]?.end || 0;
+    const kept = marks.slice();
+    stopMarking();
+    if (!kept.length) {
+      player?.reset(snap.index);
+      return;
+    }
+    replaceSegments(segmentsFromMarks(kept, duration, prefs.chunkSeconds), 0);
+    track('shadow_marked', { sentences: kept.length });
+  }
+
+  function cancelMarking(): void {
+    stopMarking();
+    player?.reset(snap.index);
+  }
+
+  function drawMarkCount(): void {
+    markCount.textContent = st('markCount', marks.length, formatClock(media?.time() ?? 0));
+  }
+
+  markStartBtn.addEventListener('click', startMarking);
+  $('.sh-mark-cut').addEventListener('click', cutHere);
+  $('.sh-mark-undo').addEventListener('click', undoCut);
+  $('.sh-mark-done').addEventListener('click', finishMarking);
+  $('.sh-mark-cancel').addEventListener('click', cancelMarking);
 
   // ---------- finishing ----------
 
@@ -649,6 +867,19 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
   const onKey = (event: KeyboardEvent) => {
     const target = event.target as HTMLElement;
     if (target.closest('input, textarea, select') || event.metaKey || event.ctrlKey || event.altKey) return;
+    if (marking) {
+      if (event.key === ' ' || event.key === 'Enter') {
+        event.preventDefault();
+        if (document.activeElement instanceof HTMLButtonElement) document.activeElement.blur();
+        cutHere();
+      } else if (event.key === 'Backspace') {
+        event.preventDefault();
+        undoCut();
+      } else if (event.key === 'Escape') {
+        cancelMarking();
+      }
+      return;
+    }
     if (event.key === 'Escape') {
       if (!sheet.hidden) closeSheet();
       return;
@@ -682,6 +913,10 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
   // the video stops when the app goes to the background; so does the loop
   const onVisibility = () => {
     if (document.visibilityState !== 'hidden' || !player) return;
+    if (marking) {
+      cancelMarking();
+      return;
+    }
     if (snap.phase === 'playing') player.toggle();
     else if (snap.phase === 'gap') player.externalPause();
     saveNow();

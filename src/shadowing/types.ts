@@ -19,13 +19,18 @@ export const LESSON_LEVELS: LessonLevel[] = ['kids', 'mid', 'advanced'];
 
 export type TranscriptFormat = 'youtube' | 'srt' | 'vtt';
 
+// where a lesson's sentences came from; 'none' = no transcript, the video is cut by
+// time or by the player marking where each sentence ends
+export type LessonSource = TranscriptFormat | 'none';
+
 export interface ShadowLesson {
   id: string;
   videoId: string;
   title: string;
   level: LessonLevel;
+  // empty for a lesson without transcript until its video has loaded once
   segments: Segment[];
-  source: TranscriptFormat;
+  source: LessonSource;
   createdAt: number;
   updatedAt: number;
   // set when the lesson was made from a suggested video

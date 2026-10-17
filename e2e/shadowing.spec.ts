@@ -90,8 +90,10 @@ test.describe('entry', () => {
     // level tabs
     await page.locator('.sh-tab[data-level="advanced"]').click();
     await expect(page.locator('.sh-suggest h3').first()).toContainText('Matt Cutts');
+    await expect(page.locator('.sh-suggest h3').nth(1)).toContainText('How to be confident');
+    await expect(page.locator('.sh-suggest .sh-topic').nth(1)).toHaveText('Tự tin · Thuyết trình');
     await page.locator('.sh-tab[data-level="kids"]').click();
-    await expect(page.locator('.sh-suggest h3').first()).toContainText('Peppa');
+    await expect(page.locator('.sh-suggest h3').first()).toContainText('The greedy hippo');
 
     // back to the word game
     await page.locator('.sh-back').click();
@@ -124,10 +126,13 @@ test.describe('new lesson', () => {
     await expect(page.locator('.sh-url-status .sh-bad')).toBeVisible();
     await page.locator('#sh-url').fill('https://youtu.be/abcdefghijk?si=xyz');
     await expect(page.locator('.sh-url-ok')).toContainText('abcdefghijk');
-    await expect(save).toBeDisabled();
+    // a link alone is enough: the lesson is then practised without text
+    await expect(save).toBeEnabled();
+    await expect(save).toHaveText('▶ Lưu & học (không cần chữ)');
 
     await page.locator('#sh-transcript').fill('no times here at all');
     await expect(page.locator('.sh-parse-status .sh-bad')).toBeVisible();
+    await expect(save).toBeDisabled();
     await page.locator('#sh-transcript').fill(TRANSCRIPT);
     await expect(page.locator('.sh-parse-status .sh-good')).toContainText('3 câu');
     await expect(page.locator('.sh-preview-list li')).toHaveCount(3);
@@ -135,6 +140,7 @@ test.describe('new lesson', () => {
     await expect(page.locator('.sh-preview-list li').nth(2)).toContainText('Cats are very cute.');
     await expect(page.locator('.sh-preview-list li').first()).toContainText('Hello everyone and welcome to our little show.');
     await expect(save).toBeEnabled();
+    await expect(save).toHaveText('▶ Lưu & bắt đầu học');
 
     await page.locator('.sh-chip[data-level="advanced"]').click();
     await expect(page.locator('.sh-chip[data-level="advanced"]')).toHaveClass(/active/);
@@ -155,11 +161,13 @@ test.describe('new lesson', () => {
     await page.goto('./');
     await page.locator('.sh-tab[data-level="kids"]').click();
     await page.locator('.sh-suggest .sh-make').first().click();
-    await expect(page.locator('.sh-new-pick')).toContainText('Peppa Pig');
-    await expect(page.locator('#sh-title')).toHaveValue('Peppa Pig — Muddy Puddles');
+    await expect(page.locator('.sh-new-pick')).toContainText('The greedy hippo');
+    await expect(page.locator('#sh-title')).toHaveValue('The greedy hippo');
     await expect(page.locator('.sh-chip[data-level="kids"]')).toHaveClass(/active/);
+    // the suggestion's video is filled in
+    await expect(page.locator('#sh-url')).toHaveValue('https://www.youtube.com/watch?v=dbLecFXK00I');
+    await expect(page.locator('.sh-url-ok')).toContainText('dbLecFXK00I');
 
-    await page.locator('#sh-url').fill('https://www.youtube.com/watch?v=abcdefghijk');
     await page.locator('.sh-file').setInputFiles({
       name: 'peppa.srt',
       mimeType: 'application/x-subrip',
@@ -167,7 +175,7 @@ test.describe('new lesson', () => {
     });
     await expect(page.locator('.sh-parse-status .sh-good')).toContainText('2 câu');
     await page.locator('.sh-save').click();
-    await expect(page.locator('.sh-bar-title')).toHaveText('Peppa Pig — Muddy Puddles');
+    await expect(page.locator('.sh-bar-title')).toHaveText('The greedy hippo');
     await page.locator('.sh-back').click();
     await page.locator('.sh-tab[data-level="kids"]').click();
     await expect(page.locator('.sh-suggest').first().locator('.sh-have')).toBeVisible();
@@ -384,6 +392,145 @@ test.describe('practice', () => {
     });
     await expect(page.locator('.sh-card')).toHaveAttribute('data-phase', 'paused');
     expect(await page.evaluate(() => (window as any).__yt.playing)).toBe(false);
+  });
+});
+
+const NO_TEXT = { ...LESSON, id: 'lesson-notext', videoId: 'Short000000', title: 'No text', source: 'none', segments: [] };
+
+test.describe('without transcript', () => {
+  test('a suggested video straight away, cut by time', async ({ page }) => {
+    await setup(page, { lastGame: 'shadow', prefs: FAST });
+    await page.goto('./');
+    await page.locator('.sh-tab[data-level="kids"]').click();
+    await page.locator('.sh-suggest .sh-now').first().click();
+    await expect(page.locator('.sh-bar-title')).toHaveText('The greedy hippo');
+    await expect(page.locator('.sh-play')).toBeEnabled();
+    // the fake video is 10 minutes: 150 parts of 4 seconds
+    await expect(page.locator('.sh-bar-count')).toHaveText('1/150');
+    await expect(page.locator('.sh-piece')).toHaveText('🎧 Đoạn 1');
+    await expect(page.locator('.sh-piece-time')).toHaveText('0:00 – 0:04');
+    await expect(page.locator('.sh-side-head h2')).toContainText('Các đoạn');
+    await expect(page.locator('.sh-textmode small')).toHaveText('Đánh dấu');
+    await expect(page.locator('.sh-mark-start')).toBeVisible();
+
+    await page.locator('.sh-play').click();
+    await expect(page.locator('.sh-card')).toHaveAttribute('data-phase', 'gap', { timeout: 7000 });
+    await expect(page.locator('.sh-row[data-i="0"]')).toHaveClass(/done/);
+    await page.screenshot({ path: `test-results/shots/${test.info().project.name}-notext.png` });
+
+    await page.locator('.sh-back').click();
+    await expect(page.locator('.sh-notext')).toBeVisible();
+    await page.screenshot({ path: `test-results/shots/${test.info().project.name}-home2.png`, fullPage: true });
+    await expect(page.locator('.sh-lesson-meta')).toContainText('1/150 đoạn');
+    await page.locator('.sh-tab[data-level="kids"]').click();
+    await expect(page.locator('.sh-suggest').first().locator('.sh-have')).toBeVisible();
+  });
+
+  test('marking sentence ends by hand', async ({ page }) => {
+    await setup(page, { lessons: [NO_TEXT], lastGame: 'shadow', prefs: FAST });
+    await page.goto('./');
+    await page.locator('.sh-lesson-open').click();
+    await expect(page.locator('.sh-bar-count')).toHaveText('1/3');
+
+    await page.locator('.sh-mark-start').click();
+    await expect(page.locator('.sh-mark')).toBeVisible();
+    await expect(page.locator('.sh-transport')).toBeHidden();
+    await page.waitForTimeout(1500);
+    await page.locator('.sh-mark-cut').click();
+    await page.waitForTimeout(400);
+    // too soon after the last one: ignored
+    await page.locator('.sh-mark-cut').click();
+    await page.waitForTimeout(1300);
+    await page.locator('.sh-mark-cut').click();
+    await page.waitForTimeout(1300);
+    await page.locator('.sh-mark-cut').click();
+    await expect(page.locator('.sh-mark-count')).toContainText('Đã đánh dấu 3 câu');
+    await page.locator('.sh-mark-undo').click();
+    await expect(page.locator('.sh-mark-count')).toContainText('Đã đánh dấu 2 câu');
+    await page.screenshot({ path: `test-results/shots/${test.info().project.name}-marking.png` });
+    await page.locator('.sh-mark-done').click();
+
+    await expect(page.locator('.sh-mark')).toBeHidden();
+    await expect(page.locator('.sh-transport')).toBeVisible();
+    await expect(page.locator('.sh-card')).toHaveAttribute('data-phase', 'idle');
+    // two marked sentences, then the rest of the 13 s video in 4 s parts
+    const rows = page.locator('.sh-row');
+    expect(await rows.count()).toBeGreaterThanOrEqual(4);
+    const lesson = await page.evaluate(() => JSON.parse(localStorage.getItem('shootwords.shadowLessons.v1')!)[0]);
+    expect(lesson.segments[0].start).toBe(0);
+    expect(lesson.segments[0].end).toBeGreaterThan(1);
+    expect(lesson.segments[0].end).toBeLessThan(2);
+    expect(lesson.segments[1].end).toBeGreaterThan(2.3);
+    expect(lesson.segments[1].end).toBeLessThan(3.6);
+    expect(lesson.segments[lesson.segments.length - 1].end).toBe(13);
+    expect(await page.evaluate(() => (window as any).__yt.playing)).toBe(false);
+
+    // marking again (from the ✂ control this time) and cancelling keeps the sentences
+    const count = await rows.count();
+    await page.locator('.sh-textmode').click();
+    await expect(page.locator('.sh-mark')).toBeVisible();
+    await page.locator('.sh-mark-cancel').click();
+    await expect(rows).toHaveCount(count);
+  });
+
+  test('length of parts, and splitting a part', async ({ page }) => {
+    await setup(page, { lessons: [NO_TEXT], lastGame: 'shadow', prefs: FAST });
+    await page.goto('./');
+    await page.locator('.sh-lesson-open').click();
+    await expect(page.locator('.sh-row')).toHaveCount(3);
+    await page.locator('.sh-settings-btn').click();
+    await page.locator('.sh-choice[data-name="chunkSeconds"] .sh-chip[data-value="6"]').click();
+    await page.locator('.sh-sheet-close').click();
+    await expect(page.locator('.sh-row')).toHaveCount(2);
+    await expect(page.locator('.sh-piece-time')).toHaveText('0:00 – 0:06');
+
+    await page.locator('.sh-edit-toggle').click();
+    await page.locator('.sh-row[data-i="0"] [data-act="split"]').click();
+    await expect(page.locator('.sh-row')).toHaveCount(3);
+    await expect(page.locator('.sh-piece-time')).toHaveText('0:00 – 0:03');
+  });
+
+  test('a suggested video with its built-in transcript', async ({ page }) => {
+    await setup(page, { lastGame: 'shadow', prefs: FAST });
+    await page.goto('./');
+    await page.locator('.sh-tab[data-level="advanced"]').click();
+    const card = page.locator('.sh-suggest').first();
+    await expect(card.locator('.sh-hastext')).toHaveText('📝 có chữ');
+    await expect(card.locator('.sh-make')).toHaveCount(0);
+    await card.locator('.sh-now').click();
+    await expect(page.locator('.sh-bar-title')).toHaveText('Try something new for 30 days — Matt Cutts');
+    await expect(page.locator('.sh-text')).toHaveText('A few years ago, I felt like I was stuck in a rut,');
+    await expect(page.locator('.sh-bar-count')).toHaveText(/^1\/3\d$/);
+    await expect(page.locator('.sh-side-head h2')).toContainText('Bản chép lời');
+    await page.locator('.sh-play').click();
+    // starts at 0:16, where the talk begins
+    await page.waitForTimeout(300);
+    const t = await page.evaluate(() => (window as any).__yt.now());
+    expect(t).toBeGreaterThan(15.8);
+    expect(t).toBeLessThan(17);
+  });
+
+  test('a lesson made without text gets the built-in transcript', async ({ page }) => {
+    const old = { ...NO_TEXT, videoId: 'UNP03fDSj1U', title: 'Matt', suggestionId: 'ted-cutts-30-days', level: 'advanced' };
+    await setup(page, { lessons: [old], lastGame: 'shadow' });
+    await page.goto('./');
+    await page.locator('.sh-tab[data-level="advanced"]').click();
+    await page.locator('.sh-suggest').first().locator('.sh-upgrade').click();
+    await expect(page.locator('.sh-text')).toHaveText('A few years ago, I felt like I was stuck in a rut,');
+    await page.locator('.sh-back').click();
+    await expect(page.locator('.sh-notext')).toHaveCount(0);
+    await page.locator('.sh-tab[data-level="advanced"]').click();
+    await expect(page.locator('.sh-upgrade')).toHaveCount(0);
+  });
+
+  test('a new lesson from a link only', async ({ page }) => {
+    await setup(page, { lastGame: 'shadow' });
+    await page.goto('./');
+    await page.locator('.sh-new-card').click();
+    await page.locator('#sh-url').fill('https://youtu.be/Short000000');
+    await page.locator('.sh-save').click();
+    await expect(page.locator('.sh-bar-count')).toHaveText('1/3');
+    await expect(page.locator('.sh-bar-title')).toHaveText('Fake video title');
   });
 });
 

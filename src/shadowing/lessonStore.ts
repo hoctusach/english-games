@@ -1,4 +1,4 @@
-import type { LessonLevel, Segment, ShadowLesson, ShadowMode, TextMode, TranscriptFormat } from '@/shadowing/types';
+import type { LessonLevel, LessonSource, Segment, ShadowLesson, ShadowMode, TextMode } from '@/shadowing/types';
 import { LESSON_LEVELS } from '@/shadowing/types';
 import {
   LAST_LESSON_KEY,
@@ -42,7 +42,7 @@ function validLesson(value: unknown): value is ShadowLesson {
     typeof l.id === 'string' &&
     typeof l.videoId === 'string' &&
     Array.isArray(l.segments) &&
-    l.segments.length > 0 &&
+    (l.segments.length > 0 || l.source === 'none') &&
     l.segments.every(validSegment)
   );
 }
@@ -72,7 +72,7 @@ export interface NewLesson {
   title: string;
   level: LessonLevel;
   segments: Segment[];
-  source: TranscriptFormat;
+  source: LessonSource;
   suggestionId?: string;
 }
 
@@ -98,13 +98,17 @@ export function createLesson(input: NewLesson): ShadowLesson {
   return lesson;
 }
 
-export function updateLesson(id: string, changes: Partial<Pick<ShadowLesson, 'title' | 'level' | 'segments'>>): ShadowLesson | undefined {
+export function updateLesson(
+  id: string,
+  changes: Partial<Pick<ShadowLesson, 'title' | 'level' | 'segments' | 'source'>>,
+): ShadowLesson | undefined {
   const lessons = loadLessons();
   const lesson = lessons.find((l) => l.id === id);
   if (!lesson) return undefined;
   if (changes.title !== undefined && changes.title.trim()) lesson.title = changes.title.trim();
   if (changes.level !== undefined) lesson.level = changes.level;
   if (changes.segments !== undefined && changes.segments.length) lesson.segments = roundSegments(changes.segments);
+  if (changes.source !== undefined) lesson.source = changes.source;
   lesson.updatedAt = Date.now();
   saveLessons(lessons);
   return lesson;
@@ -174,6 +178,14 @@ export function saveLessonProgress(id: string, progress: LessonProgress): void {
   }
 }
 
+export function clearLessonProgress(id: string): void {
+  try {
+    localStorage.removeItem(SHADOW_PROGRESS_PREFIX + id);
+  } catch {
+    // nothing to clear
+  }
+}
+
 export function practisedCount(progress: LessonProgress): number {
   return progress.reps.filter((n) => n > 0).length;
 }
@@ -197,8 +209,11 @@ export interface ShadowPrefs {
   gapFactor: number;
   autoNext: boolean;
   textMode: TextMode;
+  // lessons without transcript: length of each piece, in seconds
+  chunkSeconds: number;
 }
 
+export const CHUNK_SECONDS = [3, 4, 6];
 export const RATES = [0.5, 0.75, 1, 1.25];
 export const GAP_FACTORS = [0.75, 1, 1.5];
 export const REPEATS = [1, 2, 3];
@@ -210,6 +225,7 @@ export const DEFAULT_PREFS: ShadowPrefs = {
   gapFactor: 1,
   autoNext: true,
   textMode: 'show',
+  chunkSeconds: 4,
 };
 
 export function loadPrefs(): ShadowPrefs {
@@ -221,6 +237,7 @@ export function loadPrefs(): ShadowPrefs {
     gapFactor: GAP_FACTORS.includes(raw.gapFactor as number) ? (raw.gapFactor as number) : DEFAULT_PREFS.gapFactor,
     autoNext: typeof raw.autoNext === 'boolean' ? raw.autoNext : DEFAULT_PREFS.autoNext,
     textMode: raw.textMode === 'hint' || raw.textMode === 'hide' ? raw.textMode : 'show',
+    chunkSeconds: CHUNK_SECONDS.includes(raw.chunkSeconds as number) ? (raw.chunkSeconds as number) : DEFAULT_PREFS.chunkSeconds,
   };
 }
 
