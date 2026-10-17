@@ -1409,3 +1409,172 @@
     padding: 9px 10px;
   }
 }
+
+/* ================= lessons without transcript ================= */
+
+.sh-piece {
+  display: block;
+  font-size: clamp(22px, 5vw, 28px);
+  font-weight: 700;
+}
+
+.sh-piece-time {
+  display: block;
+  margin-top: 2px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.sh-piece-wait {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.sh-row-piece {
+  color: var(--muted);
+}
+
+.sh-side-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.sh-notext {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.sh-sheet-mark {
+  text-align: center;
+}
+
+/* suggested videos with a known video: a thumbnail instead of the emoji */
+.sh-suggest-thumb {
+  position: relative;
+  flex-shrink: 0;
+  width: 96px;
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+  align-self: flex-start;
+}
+
+.sh-suggest-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.sh-suggest-thumb span {
+  position: absolute;
+  left: 4px;
+  bottom: 2px;
+  font-size: 18px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.8));
+}
+
+/* marking sentence ends while the video plays */
+.sh-marking .sh-controls,
+.sh-marking .sh-transport,
+.sh-marking .sh-side {
+  display: none;
+}
+
+.sh-mark {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(167, 139, 250, 0.45);
+  background: rgba(167, 139, 250, 0.08);
+  animation: sh-fade-up 0.2s ease both;
+}
+
+.sh-mark[hidden] {
+  display: none;
+}
+
+.sh-mark-help {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.sh-mark-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+}
+
+.sh-mark-row .btn {
+  text-align: center;
+}
+
+.sh-mark-cut {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 104px;
+  height: 104px;
+  border: none;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #a78bfa, #7c3aed);
+  color: #fff;
+  font-size: 34px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 12px 28px -10px rgba(124, 58, 237, 0.9);
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.08s ease;
+}
+
+.sh-mark-cut small {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sh-mark-cut:active {
+  transform: scale(0.92);
+}
+
+.sh-mark-cut.sh-pop {
+  animation: sh-cut-pop 0.3s ease;
+}
+
+.sh-mark-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes sh-cut-pop {
+  40% {
+    box-shadow: 0 0 0 10px rgba(74, 222, 128, 0.35);
+    background: linear-gradient(135deg, #4ade80, #16a34a);
+  }
+}
+
+.sh-lesson-meta {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+.sh-lesson-meta > span {
+  white-space: nowrap;
+}

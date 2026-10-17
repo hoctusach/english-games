@@ -194,6 +194,16 @@ export class SegmentPlayer {
     else this.emit();
   }
 
+  // Back to the start state on a sentence, with the video stopped.
+  reset(index = this.index): void {
+    this.media.pause();
+    this.seekPending = null;
+    this.repeatsDone = 0;
+    this.loop = false;
+    this.index = this.clamp(index);
+    this.setPhase('idle');
+  }
+
   // The video was paused from outside (its own controls, the app going to the
   // background).
   externalPause(): void {

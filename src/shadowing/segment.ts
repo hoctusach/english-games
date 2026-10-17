@@ -153,7 +153,7 @@ export function mergeWithNext(segments: Segment[], index: number): Segment[] {
   const a = segments[index];
   const b = segments[index + 1];
   if (!a || !b) return segments;
-  const merged: Segment = { start: a.start, end: Math.max(a.end, b.end), text: `${a.text} ${b.text}` };
+  const merged: Segment = { start: a.start, end: Math.max(a.end, b.end), text: `${a.text} ${b.text}`.trim() };
   return [...segments.slice(0, index), merged, ...segments.slice(index + 2)];
 }
 
@@ -162,6 +162,12 @@ export function mergeWithNext(segments: Segment[], index: number): Segment[] {
 export function splitSegment(segments: Segment[], index: number): Segment[] {
   const seg = segments[index];
   if (!seg) return segments;
+  if (!seg.text.trim()) {
+    // no words (a lesson without transcript): cut at the middle
+    if (seg.end - seg.start < MIN_PIECE_SECONDS * 2) return segments;
+    const mid = (seg.start + seg.end) / 2;
+    return [...segments.slice(0, index), { ...seg, end: mid }, { start: mid, end: seg.end, text: '' }, ...segments.slice(index + 1)];
+  }
   const words = seg.text.split(' ');
   if (words.length < 2) return segments;
 
@@ -183,6 +189,40 @@ export function splitSegment(segments: Segment[], index: number): Segment[] {
   const head: Segment = { start: seg.start, end: cut, text: headText };
   const tail: Segment = { start: cut, end: seg.end, text: words.slice(best + 1).join(' ') };
   return [...segments.slice(0, index), head, tail, ...segments.slice(index + 1)];
+}
+
+// ---------- lessons without transcript ----------
+
+// shortest piece worth practising on its own
+export const MIN_PIECE_SECONDS = 0.8;
+
+// Cuts [from, to) into pieces of about `seconds`; a short leftover joins the last one.
+export function chunkByTime(from: number, to: number, seconds: number): Segment[] {
+  const out: Segment[] = [];
+  if (!(to - from > 0.2) || !(seconds > 0)) return out;
+  for (let start = from; start < to - 0.01; start += seconds) {
+    out.push({ start, end: Math.min(to, start + seconds), text: '' });
+  }
+  const last = out[out.length - 1];
+  if (out.length > 1 && last.end - last.start < seconds / 2) {
+    out.pop();
+    out[out.length - 1].end = last.end;
+  }
+  return out;
+}
+
+// Sentences from the times the player tapped "end of sentence" while watching. What
+// comes after the last tap is cut by time, so the rest of the video stays usable.
+export function segmentsFromMarks(marks: number[], duration: number, restSeconds: number): Segment[] {
+  const cuts = [...marks].filter((t) => t > 0 && t < duration).sort((a, b) => a - b);
+  const out: Segment[] = [];
+  let start = 0;
+  for (const cut of cuts) {
+    if (cut - start < MIN_PIECE_SECONDS) continue;
+    out.push({ start, end: cut, text: '' });
+    start = cut;
+  }
+  return [...out, ...chunkByTime(start, duration, restSeconds)];
 }
 
 export function removeSegment(segments: Segment[], index: number): Segment[] {

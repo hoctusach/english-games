@@ -101,7 +101,12 @@ plays them in the embedded YouTube player:
 - **Shadow (Nói đuổi)**: the video runs on and you speak along; one sentence can be looped.
 - Speed 0.5×–1.25×, full text / first letters / hidden, a tappable transcript, merge or
   split badly cut sentences, keyboard shortcuts on computers.
-- Suggested videos for kids (A2 Flyers), intermediate and advanced learners.
+- **No transcript needed**: a link alone works. The video is then cut into parts of a
+  few seconds (3, 4 or 6), shown as "Part 1, Part 2…" without text, and ✂ **Mark
+  sentences** plays the video once while you tap at the end of each sentence, so the parts
+  match the real sentences.
+- Suggested videos for kids (A2 Flyers), intermediate and advanced learners; most can be
+  practised at once ("Practise now", no text) or made into a lesson with a transcript.
 
 Lessons, progress and settings are saved in `localStorage` like the word sets (and are
 part of backups). The code lives in `src/shadowing/` and loads only when Shadowing opens.

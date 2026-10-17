@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildSegments,
+  chunkByTime,
   formatClock,
   mergeWithNext,
   removeSegment,
   segmentIndexAt,
+  segmentsFromMarks,
   splitSegment,
 } from '@/shadowing/segment';
 import type { Caption } from '@/shadowing/types';
@@ -139,5 +141,48 @@ describe('helpers', () => {
     expect(formatClock(5)).toBe('0:05');
     expect(formatClock(65.9)).toBe('1:05');
     expect(formatClock(3723)).toBe('1:02:03');
+  });
+});
+
+describe('lessons without transcript', () => {
+  it('cuts by time, joining a short leftover to the last piece', () => {
+    expect(chunkByTime(0, 9, 4)).toEqual([
+      { start: 0, end: 4, text: '' },
+      { start: 4, end: 9, text: '' },
+    ]);
+    expect(chunkByTime(0, 10, 4).map((s) => s.end)).toEqual([4, 8, 10]);
+    expect(chunkByTime(0, 12, 4).length).toBe(3);
+    expect(chunkByTime(0, 13, 4).map((s) => s.end)).toEqual([4, 8, 13]);
+    expect(chunkByTime(0, 15, 4).map((s) => s.end)).toEqual([4, 8, 12, 15]);
+    expect(chunkByTime(0, 0, 4)).toEqual([]);
+    expect(chunkByTime(0, 3, 4)).toEqual([{ start: 0, end: 3, text: '' }]);
+  });
+
+  it('builds sentences from marks, cutting the rest by time', () => {
+    const segs = segmentsFromMarks([2.5, 6, 6.3, 1e9, -1], 19, 4);
+    // 6.3 is too close to 6 to be a sentence of its own; out-of-range marks are ignored
+    expect(segs.slice(0, 2)).toEqual([
+      { start: 0, end: 2.5, text: '' },
+      { start: 2.5, end: 6, text: '' },
+    ]);
+    expect(segs.slice(2).map((s) => [s.start, s.end])).toEqual([
+      [6, 10],
+      [10, 14],
+      [14, 19],
+    ]);
+    expect(segmentsFromMarks([], 9, 4).map((s) => s.end)).toEqual([4, 9]);
+  });
+
+  it('splits and merges pieces without words', () => {
+    const segs = [
+      { start: 0, end: 4, text: '' },
+      { start: 4, end: 8, text: '' },
+    ];
+    expect(splitSegment(segs, 0).slice(0, 2)).toEqual([
+      { start: 0, end: 2, text: '' },
+      { start: 2, end: 4, text: '' },
+    ]);
+    expect(splitSegment([{ start: 0, end: 1, text: '' }], 0).length).toBe(1);
+    expect(mergeWithNext(segs, 0)).toEqual([{ start: 0, end: 8, text: '' }]);
   });
 });

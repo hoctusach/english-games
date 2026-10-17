@@ -41,6 +41,7 @@ export function renderShadowNew(root: HTMLElement, app: App, suggestionId?: stri
     </section>
     <section class="sh-step">
       <label class="sh-step-label" for="sh-transcript">${st('step2')}</label>
+      <p class="sh-hint">${st('transcriptOptional')}</p>
       <details class="sh-guide">
         <summary>${st('guideTitle')}</summary>
         <ol>
@@ -230,30 +231,43 @@ export function renderShadowNew(root: HTMLElement, app: App, suggestionId?: stri
   drawLevels();
 
   // ---- save ----
+  // The transcript is optional: without one the lesson is practised without text.
+  const hasText = () => textarea.value.trim().length > 0;
   const update = () => {
-    const ready = !!videoId && segments.length > 0;
+    const ready = !!videoId && (!hasText() || segments.length > 0);
     saveBtn.disabled = !ready;
-    saveHint.hidden = ready;
+    saveBtn.textContent = hasText() ? st('saveStart') : st('saveNoText');
+    saveHint.hidden = !!videoId;
+    saveHint.textContent = st('needLink');
   };
 
   saveBtn.addEventListener('click', () => {
-    if (!videoId || !segments.length || !parsed) return;
+    if (!videoId) return;
+    const withText = hasText();
+    if (withText && (!segments.length || !parsed)) return;
+    const source = withText && parsed ? parsed.format : 'none';
     try {
       const lesson = createLesson({
         videoId,
         title: titleInput.value || suggestion?.title || videoId,
         level,
-        segments,
-        source: parsed.format,
+        segments: withText ? segments : [],
+        source,
         suggestionId: suggestion?.id,
       });
       setLastLessonId(lesson.id);
-      track('shadow_lesson_create', { sentences: segments.length, format: parsed.format, level, suggested: !!suggestion });
+      track('shadow_lesson_create', { sentences: withText ? segments.length : 0, format: source, level, suggested: !!suggestion });
       app.showShadowLesson(lesson.id);
     } catch (err) {
       alert(err instanceof StorageFullError ? st('storageFull') : String(err));
     }
   });
+
+  if (suggestion?.videoId) {
+    urlInput.value = `https://www.youtube.com/watch?v=${suggestion.videoId}`;
+    onUrl();
+  }
+  update();
 
   return {
     destroy() {

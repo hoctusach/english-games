@@ -6,11 +6,14 @@
   var REPORT_MS = 200;
   var SEEK_LAG_MS = 300;
   var DURATION = 600;
+  // a short video for tests that play one through
+  var SHORT = { Short000000: 13 };
 
   function FakePlayer(el, options) {
     var self = this;
     this.options = options;
     this.videoId = options.videoId;
+    this.duration = SHORT[options.videoId] || DURATION;
     this.t = 0;
     this.reported = 0;
     this.playing = false;
@@ -62,8 +65,8 @@
     var now = performance.now();
     if (this.playing) {
       this.t += ((now - this.lastAt) / 1000) * this.rate;
-      if (this.t >= DURATION) {
-        this.t = DURATION;
+      if (this.t >= this.duration) {
+        this.t = this.duration;
         this.playing = false;
         this.setState(0);
       }
@@ -88,7 +91,7 @@
   FakePlayer.prototype.seekTo = function (seconds) {
     this.calls.push('seek:' + seconds.toFixed(2));
     this.advance();
-    this.t = Math.max(0, Math.min(DURATION, seconds));
+    this.t = Math.max(0, Math.min(this.duration, seconds));
     this.seekUntil = performance.now() + SEEK_LAG_MS;
   };
   FakePlayer.prototype.getCurrentTime = function () {
@@ -97,6 +100,9 @@
   FakePlayer.prototype.setPlaybackRate = function (rate) {
     this.advance();
     this.rate = rate;
+  };
+  FakePlayer.prototype.getDuration = function () {
+    return this.duration;
   };
   FakePlayer.prototype.getVideoData = function () {
     return { title: 'Fake video title' };
