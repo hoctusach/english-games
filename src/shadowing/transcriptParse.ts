@@ -22,6 +22,8 @@ const STAMP_TEXT = new RegExp(String.raw`^[\[(]?(${TIME})[\])]?\s*(?:[-–—:|]
 // "5 seconds", "1 minute, 5 seconds", "2 giây", "1 phút, 5 giây"
 const SPOKEN_DURATION =
   /^(?:\d+\s+(?:hours?|minutes?|seconds?|giờ|phút|giây)(?:\s*,\s*|\s+|$))+$/i;
+// chapter headings YouTube puts between the lines: "Chapter 2: Benefits of new habits"
+const CHAPTER = /^(?:chapter|chương|phần)\s+\d+\s*[:.\-–—]/i;
 const ARROW = /(\d[\d:.,]*)\s*-->\s*(\d[\d:.,]*)/;
 
 export function parseTimestamp(value: string): number | null {
@@ -69,7 +71,7 @@ function parseYouTubeCopy(text: string): Caption[] {
     const last = raw[raw.length - 1];
     if (time !== null && (!last || time >= last.start)) {
       raw.push({ start: time, parts: lead && !stamp ? [lead[2]] : [] });
-    } else if (last && !SPOKEN_DURATION.test(line)) {
+    } else if (last && !SPOKEN_DURATION.test(line) && !CHAPTER.test(line)) {
       last.parts.push(line);
     }
     // lines before the first time ("Transcript", "Search in video", the language

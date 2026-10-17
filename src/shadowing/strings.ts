@@ -126,6 +126,8 @@ const en = {
   noTextBadge: '🎧 No text',
   notCutYet: 'Not cut yet',
   learnNow: '▶ Practise now',
+  hasText: '📝 with text',
+  addText: '✨ Add the text',
   addTranscript: '➕ With transcript',
   transcriptOptional:
     'Optional. Leave it empty to practise without text: the video is cut into parts of a few seconds, and while practising you can mark where each sentence ends (✂ Mark sentences).',
@@ -267,6 +269,8 @@ const vi: Record<Key, string> = {
   noTextBadge: '🎧 Không chữ',
   notCutYet: 'Chưa chia đoạn',
   learnNow: '▶ Học ngay',
+  hasText: '📝 có chữ',
+  addText: '✨ Thêm chữ',
   addTranscript: '➕ Kèm transcript',
   transcriptOptional:
     'Không bắt buộc. Bỏ trống để học không cần chữ: app chia video thành từng đoạn vài giây, và khi học bạn có thể tự đánh dấu chỗ hết mỗi câu (✂ Đánh dấu câu).',

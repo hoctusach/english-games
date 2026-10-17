@@ -98,13 +98,17 @@ export function createLesson(input: NewLesson): ShadowLesson {
   return lesson;
 }
 
-export function updateLesson(id: string, changes: Partial<Pick<ShadowLesson, 'title' | 'level' | 'segments'>>): ShadowLesson | undefined {
+export function updateLesson(
+  id: string,
+  changes: Partial<Pick<ShadowLesson, 'title' | 'level' | 'segments' | 'source'>>,
+): ShadowLesson | undefined {
   const lessons = loadLessons();
   const lesson = lessons.find((l) => l.id === id);
   if (!lesson) return undefined;
   if (changes.title !== undefined && changes.title.trim()) lesson.title = changes.title.trim();
   if (changes.level !== undefined) lesson.level = changes.level;
   if (changes.segments !== undefined && changes.segments.length) lesson.segments = roundSegments(changes.segments);
+  if (changes.source !== undefined) lesson.source = changes.source;
   lesson.updatedAt = Date.now();
   saveLessons(lessons);
   return lesson;
@@ -171,6 +175,14 @@ export function saveLessonProgress(id: string, progress: LessonProgress): void {
     write(SHADOW_PROGRESS_PREFIX + id, { ...progress, seconds: Math.round(progress.seconds), updatedAt: Date.now() });
   } catch {
     // progress is a nicety; never interrupt practice over it
+  }
+}
+
+export function clearLessonProgress(id: string): void {
+  try {
+    localStorage.removeItem(SHADOW_PROGRESS_PREFIX + id);
+  } catch {
+    // nothing to clear
   }
 }
 

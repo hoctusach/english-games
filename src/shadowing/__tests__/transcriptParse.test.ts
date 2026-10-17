@@ -48,6 +48,11 @@ describe('YouTube "Show transcript" copy', () => {
     ]);
   });
 
+  it('leaves out chapter headings', () => {
+    const parsed = parseTranscript('Chapter 1: The idea\n0:16\na few years ago\n0:39\nthe right amount\nChapter 2: Benefits of new habits\n0:48\n30-day challenges')!;
+    expect(parsed.captions.map((c) => c.text)).toEqual(['a few years ago', 'the right amount', '30-day challenges']);
+  });
+
   it('reads a time and the words on one line', () => {
     const parsed = parseTranscript('0:00 hello there\n[0:04] how are you\n0:09 - fine thanks')!;
     expect(parsed.captions.map((c) => [c.start, c.text])).toEqual([

@@ -1,6 +1,6 @@
 import type { App } from '@/App';
 import type { ScreenHandle } from '@/ui/ScreenManager';
-import type { LessonLevel, ShadowLesson } from '@/shadowing/types';
+import type { LessonLevel, Segment, ShadowLesson } from '@/shadowing/types';
 import { LESSON_LEVELS } from '@/shadowing/types';
 import {
   createLesson,
@@ -11,10 +11,12 @@ import {
   loadLessons,
   practisedCount,
   StorageFullError,
+  clearLessonProgress,
   updateLesson,
 } from '@/shadowing/lessonStore';
-import { SUGGESTIONS } from '@/shadowing/suggestions';
-import { formatClock } from '@/shadowing/segment';
+import { SUGGESTIONS, type VideoSuggestion } from '@/shadowing/suggestions';
+import { parseTranscript } from '@/shadowing/transcriptParse';
+import { buildSegments, formatClock } from '@/shadowing/segment';
 import { searchUrl, thumbnailUrl } from '@/shadowing/youtubeUrl';
 import { levelLabel, st } from '@/shadowing/strings';
 import { escapeHtml } from '@/utils/dom';
@@ -168,6 +170,11 @@ function renderLessonCard(app: App, lesson: ShadowLesson, refresh: () => void): 
   return card;
 }
 
+function builtInSegments(s: VideoSuggestion): Segment[] {
+  const parsed = s.transcript ? parseTranscript(s.transcript) : null;
+  return parsed ? buildSegments(parsed.captions) : [];
+}
+
 function readTab(): LessonLevel {
   try {
     const saved = localStorage.getItem(TAB_KEY) as LessonLevel | null;
@@ -211,16 +218,17 @@ function renderSuggestions(app: App, lessons: ShadowLesson[]): HTMLElement {
             : `<span class="sh-suggest-emoji" aria-hidden="true">${s.emoji}</span>`
         }
         <div class="sh-suggest-body">
-          <h3>${escapeHtml(s.title)}</h3>
+          <h3>${escapeHtml(s.title)}${s.transcript ? ` <span class="sh-hastext">${st('hasText')}</span>` : ''}</h3>
           <p class="sh-suggest-meta"><span class="sh-topic">${escapeHtml(s.topic[lang])}</span>${escapeHtml(s.channel)} · ${st('minutes', s.minutes)}</p>
           <p class="sh-suggest-note">${escapeHtml(s.note[lang])}</p>
           <div class="sh-suggest-actions">
             ${
               existing
-                ? `<span class="sh-have">${st('haveLesson')}</span><button class="btn btn-primary btn-sm sh-open" type="button">${st('study')}</button>`
+                ? `<span class="sh-have">${st('haveLesson')}</span><button class="btn btn-primary btn-sm sh-open" type="button">${st('study')}</button>
+                   ${existing.source === 'none' && s.transcript ? `<button class="btn btn-sm sh-upgrade" type="button">${st('addText')}</button>` : ''}`
                 : s.videoId
                   ? `<button class="btn btn-primary btn-sm sh-now" type="button">${st('learnNow')}</button>
-                     <button class="btn btn-sm sh-make" type="button">${st('addTranscript')}</button>`
+                     ${s.transcript ? '' : `<button class="btn btn-sm sh-make" type="button">${st('addTranscript')}</button>`}`
                   : `<a class="btn btn-sm" href="${searchUrl(s.query)}" target="_blank" rel="noopener">${st('findOnYouTube')}</a>
                      <button class="btn btn-primary btn-sm sh-make" type="button">${st('makeLesson')}</button>`
             }
@@ -228,20 +236,35 @@ function renderSuggestions(app: App, lessons: ShadowLesson[]): HTMLElement {
         </div>`;
       card.querySelector('.sh-open')?.addEventListener('click', () => app.showShadowLesson(existing!.id));
       card.querySelector('.sh-make')?.addEventListener('click', () => app.showShadowNew(s.id));
-      // straight into practice, without transcript; one can be added later as a new lesson
+      // straight into practice: with the built-in transcript when there is one,
+      // otherwise without text (cut by time)
       card.querySelector('.sh-now')?.addEventListener('click', () => {
         try {
+          const segments = builtInSegments(s);
           const lesson = createLesson({
             videoId: s.videoId!,
             title: s.title,
             level: s.level,
-            segments: [],
-            source: 'none',
+            segments,
+            source: segments.length ? 'youtube' : 'none',
             suggestionId: s.id,
           });
           setLastLessonId(lesson.id);
-          track('shadow_lesson_create', { sentences: 0, format: 'none', level: s.level, suggested: true });
+          track('shadow_lesson_create', { sentences: segments.length, format: segments.length ? 'builtin' : 'none', level: s.level, suggested: true });
           app.showShadowLesson(lesson.id);
+        } catch (err) {
+          alert(err instanceof StorageFullError ? st('storageFull') : String(err));
+        }
+      });
+      // a lesson made before the transcript was added: give it the sentences
+      card.querySelector('.sh-upgrade')?.addEventListener('click', () => {
+        const segments = builtInSegments(s);
+        if (!existing || !segments.length) return;
+        try {
+          updateLesson(existing.id, { segments, source: 'youtube' });
+          clearLessonProgress(existing.id);
+          setLastLessonId(existing.id);
+          app.showShadowLesson(existing.id);
         } catch (err) {
           alert(err instanceof StorageFullError ? st('storageFull') : String(err));
         }

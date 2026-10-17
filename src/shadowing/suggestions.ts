@@ -1,4 +1,5 @@
 import type { LessonLevel } from '@/shadowing/types';
+import tedCutts30Days from '@/shadowing/transcripts/tedCutts30Days';
 
 // Videos picked for shadowing, by level. Those with a `videoId` (found through web
 // search; official channel uploads where there is one) can be practised at once
@@ -13,6 +14,9 @@ export interface VideoSuggestion {
   minutes: number;
   videoId?: string;
   query: string;
+  // the video's transcript (YouTube "Show transcript" text), when we have it: its
+  // lesson then shows the sentences
+  transcript?: string;
   // what it is about, shown as a tag so a video can be picked by context
   topic: { vi: string; en: string };
   note: { vi: string; en: string };
@@ -162,6 +166,7 @@ export const SUGGESTIONS: VideoSuggestion[] = [
     channel: 'TED',
     minutes: 4,
     videoId: 'UNP03fDSj1U',
+    transcript: tedCutts30Days,
     query: 'TED Matt Cutts Try something new for 30 days',
     topic: { vi: 'Thói quen', en: 'Habits' },
     note: {

@@ -490,6 +490,39 @@ test.describe('without transcript', () => {
     await expect(page.locator('.sh-piece-time')).toHaveText('0:00 – 0:03');
   });
 
+  test('a suggested video with its built-in transcript', async ({ page }) => {
+    await setup(page, { lastGame: 'shadow', prefs: FAST });
+    await page.goto('./');
+    await page.locator('.sh-tab[data-level="advanced"]').click();
+    const card = page.locator('.sh-suggest').first();
+    await expect(card.locator('.sh-hastext')).toHaveText('📝 có chữ');
+    await expect(card.locator('.sh-make')).toHaveCount(0);
+    await card.locator('.sh-now').click();
+    await expect(page.locator('.sh-bar-title')).toHaveText('Try something new for 30 days — Matt Cutts');
+    await expect(page.locator('.sh-text')).toHaveText('A few years ago, I felt like I was stuck in a rut,');
+    await expect(page.locator('.sh-bar-count')).toHaveText(/^1\/3\d$/);
+    await expect(page.locator('.sh-side-head h2')).toContainText('Bản chép lời');
+    await page.locator('.sh-play').click();
+    // starts at 0:16, where the talk begins
+    await page.waitForTimeout(300);
+    const t = await page.evaluate(() => (window as any).__yt.now());
+    expect(t).toBeGreaterThan(15.8);
+    expect(t).toBeLessThan(17);
+  });
+
+  test('a lesson made without text gets the built-in transcript', async ({ page }) => {
+    const old = { ...NO_TEXT, videoId: 'UNP03fDSj1U', title: 'Matt', suggestionId: 'ted-cutts-30-days', level: 'advanced' };
+    await setup(page, { lessons: [old], lastGame: 'shadow' });
+    await page.goto('./');
+    await page.locator('.sh-tab[data-level="advanced"]').click();
+    await page.locator('.sh-suggest').first().locator('.sh-upgrade').click();
+    await expect(page.locator('.sh-text')).toHaveText('A few years ago, I felt like I was stuck in a rut,');
+    await page.locator('.sh-back').click();
+    await expect(page.locator('.sh-notext')).toHaveCount(0);
+    await page.locator('.sh-tab[data-level="advanced"]').click();
+    await expect(page.locator('.sh-upgrade')).toHaveCount(0);
+  });
+
   test('a new lesson from a link only', async ({ page }) => {
     await setup(page, { lastGame: 'shadow' });
     await page.goto('./');

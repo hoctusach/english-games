@@ -56,6 +56,15 @@ function endsClause(word: string): boolean {
   return /[,;:]["'”’)]*$/.test(word);
 }
 
+// Index of the last word ending a clause, leaving at least 4 words before and 3
+// after it; -1 if none.
+function lastClauseEnd(tokens: Token[]): number {
+  for (let i = tokens.length - 4; i >= 3; i--) {
+    if (endsClause(tokens[i].word)) return i;
+  }
+  return -1;
+}
+
 function tokenize(captions: Caption[]): Token[] {
   const tokens: Token[] = [];
   captions.forEach((caption, i) => {
@@ -103,6 +112,16 @@ export function buildSegments(captions: Caption[], options: Partial<SegmentOptio
     current = [];
   };
 
+  // A line end or the length limit can fall mid-phrase ("the great American |
+  // philosopher"): cut at the last comma before it instead, when there is a fair one.
+  const closeAtComma = () => {
+    const comma = lastClauseEnd(current);
+    if (comma < 0) return close();
+    const rest = current.splice(comma + 1);
+    close();
+    current = rest;
+  };
+
   tokens.forEach((tk, i) => {
     current.push(tk);
     const isLast = i === tokens.length - 1;
@@ -111,11 +130,11 @@ export function buildSegments(captions: Caption[], options: Partial<SegmentOptio
     const seconds = tk.end - current[0].start;
 
     if (tk.gapAfter >= o.pauseSeconds) return close();
-    if (seconds >= o.hardMaxSeconds || words >= o.hardMaxWords) return close();
+    if (seconds >= o.hardMaxSeconds || words >= o.hardMaxWords) return closeAtComma();
     if (punctuated) {
       if (endsSentence(tk.word) && (words >= 2 || tk.lineEnd)) return close();
       const long = seconds >= o.softMaxSeconds || words >= o.softMaxWords;
-      if (long && (endsClause(tk.word) || tk.lineEnd)) return close();
+      if (long && (endsClause(tk.word) || tk.lineEnd)) return endsClause(tk.word) ? close() : closeAtComma();
     } else if (tk.lineEnd && seconds >= o.chunkSeconds) {
       return close();
     }
