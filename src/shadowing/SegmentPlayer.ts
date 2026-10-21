@@ -17,6 +17,10 @@ export interface MediaLike {
   seek(seconds: number): void;
   time(): number;
   setRate(rate: number): void;
+  // Wait without pausing: muted and very slow, so a player that shows its own panel when
+  // paused (YouTube's title, suggestions…) keeps it away. hold(false) puts sound and
+  // speed back. Media that can't do this leaves it out and the loop pauses instead.
+  hold?(on: boolean): void;
 }
 
 export type Phase = 'idle' | 'playing' | 'gap' | 'waiting' | 'paused' | 'ended';
@@ -26,6 +30,8 @@ export interface PlayerSettings {
   rate: number;
   // how many times each sentence is played in "repeat" mode
   repeat: number;
+  // while the player's turn runs, keep the video going muted and slow instead of pausing
+  softHold: boolean;
   // gap length as a share of the sentence's (slowed) length
   gapFactor: number;
   // in "repeat" mode, move to the next sentence on its own after the gap
@@ -71,6 +77,7 @@ export class SegmentPlayer {
   private gapEnd = 0;
   // after a seek the video keeps reporting the old time for a moment
   private seekPending: { target: number; since: number; tries: number } | null = null;
+  private held = false;
   private readonly now: () => number;
 
   constructor(
@@ -110,6 +117,7 @@ export class SegmentPlayer {
   playSegment(index: number, fresh = true): void {
     this.index = this.clamp(index);
     if (fresh) this.repeatsDone = 0;
+    this.release();
     this.seekTo(this.current.start - LEAD_SECONDS, 0);
     this.media.play();
     this.setPhase('playing');
@@ -127,6 +135,8 @@ export class SegmentPlayer {
         this.setPhase('playing');
         break;
       case 'gap':
+        this.release();
+        this.media.pause();
         this.setPhase('waiting');
         break;
       case 'waiting':
@@ -163,7 +173,11 @@ export class SegmentPlayer {
     if (mode === this.settings.mode) return;
     this.settings.mode = mode;
     this.loop = false;
-    if (this.phase === 'gap') this.phase = 'waiting';
+    if (this.phase === 'gap') {
+      this.release();
+      this.media.pause();
+      this.phase = 'waiting';
+    }
     this.emit();
   }
 
@@ -196,6 +210,7 @@ export class SegmentPlayer {
 
   // Back to the start state on a sentence, with the video stopped.
   reset(index = this.index): void {
+    this.release();
     this.media.pause();
     this.seekPending = null;
     this.repeatsDone = 0;
@@ -208,12 +223,16 @@ export class SegmentPlayer {
   // background).
   externalPause(): void {
     if (this.phase === 'playing') this.setPhase('paused');
-    else if (this.phase === 'gap') this.setPhase('waiting');
+    else if (this.phase === 'gap') {
+      this.release();
+      this.setPhase('waiting');
+    }
   }
 
   // The video was started from its own controls: follow it from where it is.
   externalPlay(): void {
     if (this.phase === 'playing') return;
+    this.release();
     this.seekPending = null;
     const at = segmentIndexAt(this.segments, this.media.time());
     if (at !== this.index) this.repeatsDone = 0;
@@ -233,8 +252,13 @@ export class SegmentPlayer {
 
   tick(): void {
     if (this.phase === 'gap' && this.now() >= this.gapEnd) {
-      if (this.settings.autoNext || this.repeatsDone < this.settings.repeat) this.proceed();
-      else this.setPhase('waiting');
+      if (this.settings.autoNext || this.repeatsDone < this.settings.repeat) {
+        this.proceed();
+      } else {
+        this.release();
+        this.media.pause();
+        this.setPhase('waiting');
+      }
       return;
     }
     if (this.phase !== 'playing') return;
@@ -245,7 +269,7 @@ export class SegmentPlayer {
 
     if (this.settings.mode === 'repeat') {
       if (t >= seg.end + TAIL_SECONDS) {
-        this.media.pause();
+        this.waitForPlayer();
         this.repeatsDone += 1;
         this.hooks.onSegmentDone?.(this.index);
         this.gapStart = this.now();
@@ -290,10 +314,27 @@ export class SegmentPlayer {
   }
 
   private finish(): void {
+    this.release();
     this.media.pause();
     this.seekPending = null;
     this.setPhase('ended');
     this.hooks.onFinished?.();
+  }
+
+  // The player's turn: pause the video, or (soft hold) let it run on muted and slow.
+  private waitForPlayer(): void {
+    if (this.settings.softHold && this.media.hold) {
+      this.media.hold(true);
+      this.held = true;
+    } else {
+      this.media.pause();
+    }
+  }
+
+  private release(): void {
+    if (!this.held) return;
+    this.held = false;
+    this.media.hold?.(false);
   }
 
   private seekTo(seconds: number, tries: number): void {

@@ -100,7 +100,7 @@ export function createLesson(input: NewLesson): ShadowLesson {
 
 export function updateLesson(
   id: string,
-  changes: Partial<Pick<ShadowLesson, 'title' | 'level' | 'segments' | 'source'>>,
+  changes: Partial<Pick<ShadowLesson, 'title' | 'level' | 'segments' | 'source' | 'liveAnchor'>>,
 ): ShadowLesson | undefined {
   const lessons = loadLessons();
   const lesson = lessons.find((l) => l.id === id);
@@ -109,6 +109,7 @@ export function updateLesson(
   if (changes.level !== undefined) lesson.level = changes.level;
   if (changes.segments !== undefined && changes.segments.length) lesson.segments = roundSegments(changes.segments);
   if (changes.source !== undefined) lesson.source = changes.source;
+  if (changes.liveAnchor !== undefined) lesson.liveAnchor = Math.round(changes.liveAnchor * 100) / 100;
   lesson.updatedAt = Date.now();
   saveLessons(lessons);
   return lesson;
@@ -211,6 +212,8 @@ export interface ShadowPrefs {
   textMode: TextMode;
   // lessons without transcript: length of each piece, in seconds
   chunkSeconds: number;
+  // wait for the player's turn without pausing the video (see MediaLike.hold)
+  softPause: boolean;
 }
 
 export const CHUNK_SECONDS = [3, 4, 6];
@@ -226,6 +229,7 @@ export const DEFAULT_PREFS: ShadowPrefs = {
   autoNext: true,
   textMode: 'show',
   chunkSeconds: 4,
+  softPause: true,
 };
 
 export function loadPrefs(): ShadowPrefs {
@@ -238,6 +242,7 @@ export function loadPrefs(): ShadowPrefs {
     autoNext: typeof raw.autoNext === 'boolean' ? raw.autoNext : DEFAULT_PREFS.autoNext,
     textMode: raw.textMode === 'hint' || raw.textMode === 'hide' ? raw.textMode : 'show',
     chunkSeconds: CHUNK_SECONDS.includes(raw.chunkSeconds as number) ? (raw.chunkSeconds as number) : DEFAULT_PREFS.chunkSeconds,
+    softPause: typeof raw.softPause === 'boolean' ? raw.softPause : DEFAULT_PREFS.softPause,
   };
 }
 

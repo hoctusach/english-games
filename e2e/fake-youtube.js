@@ -17,6 +17,7 @@
     this.t = 0;
     this.reported = 0;
     this.playing = false;
+    this.muted = false;
     this.rate = 1;
     this.state = -1;
     this.lastAt = performance.now();
@@ -100,6 +101,15 @@
   FakePlayer.prototype.setPlaybackRate = function (rate) {
     this.advance();
     this.rate = rate;
+  };
+  FakePlayer.prototype.mute = function () {
+    this.muted = true;
+  };
+  FakePlayer.prototype.unMute = function () {
+    this.muted = false;
+  };
+  FakePlayer.prototype.isMuted = function () {
+    return this.muted;
   };
   FakePlayer.prototype.getDuration = function () {
     return this.duration;

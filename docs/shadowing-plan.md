@@ -289,6 +289,14 @@ Dán link là học được. Không có transcript thì app không biết câu 
 
 ---
 
+## 12. Cắt câu tốt hơn, chữ không bị che (vòng 3)
+
+- **Đọc transcript từ ảnh chụp** (OCR trên máy bằng tesseract.js/WASM): gộp nhiều ảnh theo mốc giờ, sửa số đọc sai, báo chỗ hở. Thử trên ảnh thật: sai ~6,6%.
+- **Học & đánh dấu cùng lúc** (`LiveMarker`): video chạy, bấm ✂ khi hết câu → phát lại câu đó → tới lượt người học → chạy tiếp. Lưu `liveAnchor` + các câu đã đánh dấu; phần còn lại vẫn chia theo giây.
+- **Giữ video chạy khi tới lượt** (`softHold`): tắt tiếng + 0,25× thay vì pause để khung tạm dừng của YouTube không che chữ; bài không chữ bật sẵn CC. YouTube không có tham số nào tắt khung đó. Chưa thử được trên YouTube thật trong sandbox, cần thử trên điện thoại.
+
+---
+
 ## Nguồn tham khảo
 
 - [RecEcho: YouTube Shadowing Master](https://chromewebstore.google.com/detail/noefpifnpmfmdeaoejjbdegbpjhedhib)

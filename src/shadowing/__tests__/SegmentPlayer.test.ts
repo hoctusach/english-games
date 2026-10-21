@@ -18,6 +18,13 @@ class FakeMedia implements MediaLike {
   pause() {
     this.playing = false;
   }
+  held = false;
+  holds: boolean[] = [];
+  hold(on: boolean) {
+    this.holds.push(on);
+    this.held = on;
+    if (on) this.playing = true;
+  }
   seek(seconds: number) {
     this.seeks.push(seconds);
     if (this.lag) this.pendingSeek = { to: seconds, left: this.lag };
@@ -53,7 +60,7 @@ function make(settings: Partial<PlayerSettings> = {}, start = 0) {
   return new SegmentPlayer(
     media,
     segments,
-    { mode: 'repeat', rate: 1, repeat: 1, gapFactor: 1, autoNext: true, ...settings },
+    { mode: 'repeat', rate: 1, repeat: 1, gapFactor: 1, autoNext: true, softHold: false, ...settings },
     {
       now: () => now,
       onSegmentDone: (i) => done.push(i),
@@ -303,6 +310,66 @@ describe('reset', () => {
     player.setLoop(true);
     player.reset(2);
     expect(player.snapshot()).toMatchObject({ phase: 'idle', index: 2, loop: false });
+    expect(media.playing).toBe(false);
+  });
+});
+
+describe('soft hold (no pause while it is the players turn)', () => {
+  it('keeps the video running, held, through the gap, then lets go', () => {
+    const player = make({ softHold: true });
+    player.toggle();
+    run(player, 2.5);
+    expect(player.snapshot().phase).toBe('gap');
+    expect(media.holds).toEqual([true]);
+    expect(media.held).toBe(true);
+    expect(media.playing).toBe(true); // never paused
+    run(player, gapMs(segments[0], 1, 1) / 1000 + 0.1);
+    expect(player.snapshot()).toMatchObject({ phase: 'playing', index: 1 });
+    expect(media.holds).toEqual([true, false]);
+    expect(media.held).toBe(false);
+  });
+
+  it('pauses for real when waiting for ▶ or paused from outside', () => {
+    const player = make({ softHold: true, autoNext: false });
+    player.toggle();
+    run(player, 2.5);
+    run(player, 10);
+    expect(player.snapshot().phase).toBe('waiting');
+    expect(media.held).toBe(false);
+    expect(media.playing).toBe(false);
+
+    const again = make({ softHold: true });
+    again.toggle();
+    run(again, 2.5);
+    again.toggle(); // ▶/⏸ during the gap
+    expect(again.snapshot().phase).toBe('waiting');
+    expect(media.held).toBe(false);
+    expect(media.playing).toBe(false);
+  });
+
+  it('lets go before replaying, going to another sentence or finishing', () => {
+    const player = make({ softHold: true });
+    player.toggle();
+    run(player, 2.5);
+    player.replay();
+    expect(media.held).toBe(false);
+    run(player, 2.5);
+    expect(media.held).toBe(true);
+    player.next();
+    expect(media.held).toBe(false);
+    const last = make({ softHold: true }, 2);
+    last.toggle();
+    run(last, 2.5);
+    run(last, 10);
+    expect(last.snapshot().phase).toBe('ended');
+    expect(media.held).toBe(false);
+  });
+
+  it('pauses as before when the media cannot hold, or soft hold is off', () => {
+    const off = make({ softHold: false });
+    off.toggle();
+    run(off, 2.5);
+    expect(media.holds).toEqual([]);
     expect(media.playing).toBe(false);
   });
 });

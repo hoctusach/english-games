@@ -11,6 +11,9 @@ interface YTPlayer {
   getCurrentTime(): number;
   getDuration?(): number;
   setPlaybackRate(rate: number): void;
+  mute(): void;
+  unMute(): void;
+  isMuted?(): boolean;
   getVideoData?(): { title?: string };
   destroy(): void;
 }
@@ -74,6 +77,16 @@ export interface YouTubeEvents {
   onEnded?: () => void;
 }
 
+// speed of the held video: the slowest YouTube offers
+const HOLD_RATE = 0.25;
+// after holding starts or stops, the player reports a few state changes of its own
+const HOLD_SETTLE_MS = 1500;
+
+export interface YouTubeOptions {
+  // show the video's own captions from the start
+  captions?: boolean;
+}
+
 const STATE_ENDED = 0;
 const STATE_PLAYING = 1;
 const STATE_PAUSED = 2;
@@ -89,8 +102,17 @@ export class YouTubeMedia implements MediaLike {
   private pendingSeek: { target: number; since: number } | null = null;
   private lastCommand: { type: 'play' | 'pause'; at: number } | null = null;
   private destroyed = false;
+  private holding = false;
+  private holdChangedAt = 0;
+  private wasMuted = false;
 
-  constructor(api: YTNamespace, host: HTMLElement, videoId: string, private events: YouTubeEvents = {}) {
+  constructor(
+    api: YTNamespace,
+    host: HTMLElement,
+    videoId: string,
+    private events: YouTubeEvents = {},
+    options: YouTubeOptions = {},
+  ) {
     const mount = document.createElement('div');
     host.appendChild(mount);
     this.player = new api.Player(mount, {
@@ -103,7 +125,7 @@ export class YouTubeMedia implements MediaLike {
         rel: 0,
         modestbranding: 1,
         iv_load_policy: 3,
-        cc_load_policy: 0,
+        cc_load_policy: options.captions ? 1 : 0,
         disablekb: 1,
         fs: 0,
         enablejsapi: 1,
@@ -131,7 +153,33 @@ export class YouTubeMedia implements MediaLike {
   pause(): void {
     this.lastCommand = { type: 'pause', at: performance.now() };
     this.playing = false;
+    if (this.holding) this.hold(false);
     this.run(() => this.player.pauseVideo());
+  }
+
+  // Keep the video running muted and slow instead of pausing it: a paused YouTube
+  // player covers the picture (and its captions) with its own panel.
+  hold(on: boolean): void {
+    if (this.destroyed || on === this.holding) return;
+    this.holding = on;
+    this.holdChangedAt = performance.now();
+    if (on) {
+      this.run(() => {
+        try {
+          this.wasMuted = !!this.player.isMuted?.();
+        } catch {
+          this.wasMuted = false;
+        }
+        if (!this.wasMuted) this.player.mute();
+        this.player.setPlaybackRate(HOLD_RATE);
+        this.player.playVideo();
+      });
+    } else {
+      this.run(() => {
+        if (!this.wasMuted) this.player.unMute();
+        this.player.setPlaybackRate(this.rate);
+      });
+    }
   }
 
   seek(seconds: number): void {
@@ -201,6 +249,12 @@ export class YouTubeMedia implements MediaLike {
 
   private onState(state: number): void {
     if (this.destroyed) return;
+    if (this.holding || performance.now() - this.holdChangedAt < HOLD_SETTLE_MS) {
+      // changes made by holding or letting go are not the player pressing play or pause
+      this.playing = state === STATE_PLAYING;
+      if (state === STATE_ENDED) this.events.onEnded?.();
+      return;
+    }
     const since = this.lastCommand ? performance.now() - this.lastCommand.at : Infinity;
     if (state === STATE_PLAYING) {
       this.playing = true;

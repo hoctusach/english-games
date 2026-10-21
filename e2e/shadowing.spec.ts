@@ -62,7 +62,7 @@ async function setup(page: Page, options: Setup = {}) {
   }, options);
 }
 
-const FAST = { gapFactor: 0.75, rate: 1, repeat: 1, autoNext: true, mode: 'repeat', textMode: 'show' };
+const FAST = { gapFactor: 0.75, rate: 1, repeat: 1, autoNext: true, mode: 'repeat', textMode: 'show', softPause: false };
 
 async function openLesson(page: Page, prefs: Record<string, unknown> = FAST) {
   await setup(page, { lessons: [LESSON], prefs, lastGame: 'shadow' });
@@ -413,6 +413,11 @@ test.describe('without transcript', () => {
     await expect(page.locator('.sh-textmode small')).toHaveText('Đánh dấu');
     await expect(page.locator('.sh-mark-start')).toBeVisible();
 
+    // ▶ starts learning and marking at once
+    await page.locator('.sh-play').click();
+    await expect(page.locator('.sh-mark')).toBeVisible();
+    await page.locator('.sh-mark-done').click();
+    await expect(page.locator('.sh-mark')).toBeHidden();
     await page.locator('.sh-play').click();
     await expect(page.locator('.sh-card')).toHaveAttribute('data-phase', 'gap', { timeout: 7000 });
     await expect(page.locator('.sh-row[data-i="0"]')).toHaveClass(/done/);
@@ -426,51 +431,97 @@ test.describe('without transcript', () => {
     await expect(page.locator('.sh-suggest').first().locator('.sh-have')).toBeVisible();
   });
 
-  test('marking sentence ends by hand', async ({ page }) => {
+  test('learning and marking at once', async ({ page }) => {
     await setup(page, { lessons: [NO_TEXT], lastGame: 'shadow', prefs: FAST });
     await page.goto('./');
     await page.locator('.sh-lesson-open').click();
     await expect(page.locator('.sh-bar-count')).toHaveText('1/3');
+    await expect(page.locator('.sh-status')).toContainText('✂');
 
-    await page.locator('.sh-mark-start').click();
+    // the play button starts it
+    await page.locator('.sh-play').click();
     await expect(page.locator('.sh-mark')).toBeVisible();
     await expect(page.locator('.sh-transport')).toBeHidden();
+    await expect(page.locator('.sh-status')).toContainText('Đang nghe');
     await page.waitForTimeout(1500);
     await page.locator('.sh-mark-cut').click();
-    await page.waitForTimeout(400);
-    // too soon after the last one: ignored
-    await page.locator('.sh-mark-cut').click();
-    await page.waitForTimeout(1300);
-    await page.locator('.sh-mark-cut').click();
-    await page.waitForTimeout(1300);
-    await page.locator('.sh-mark-cut').click();
-    await expect(page.locator('.sh-mark-count')).toContainText('Đã đánh dấu 3 câu');
-    await page.locator('.sh-mark-undo').click();
-    await expect(page.locator('.sh-mark-count')).toContainText('Đã đánh dấu 2 câu');
+    // the sentence plays again, then it is the learner's turn, then the video goes on
+    await expect(page.locator('.sh-card')).toHaveAttribute('data-phase', 'gap', { timeout: 5000 });
+    await expect(page.locator('.sh-mark-count')).toContainText('Đã đánh dấu 1 câu');
     await page.screenshot({ path: `test-results/shots/${test.info().project.name}-marking.png` });
+    await expect(page.locator('.sh-status')).toContainText('Đang nghe', { timeout: 6000 });
+    expect(await page.evaluate(() => (window as any).__yt.playing)).toBe(true);
+    const resumedAt = await page.evaluate(() => (window as any).__yt.t);
+    expect(resumedAt).toBeGreaterThan(1.2);
+    expect(resumedAt).toBeLessThan(3.5);
+
+    await page.waitForTimeout(1300);
+    await page.locator('.sh-mark-cut').click();
+    await expect(page.locator('.sh-mark-count')).toContainText('Đã đánh dấu 2 câu');
+    // taken back: that sentence is listened to again
+    await page.locator('.sh-mark-undo').click();
+    await expect(page.locator('.sh-mark-count')).toContainText('Đã đánh dấu 1 câu');
+    await expect(page.locator('.sh-status')).toContainText('Đang nghe');
+    await page.waitForTimeout(1300);
+    await page.locator('.sh-mark-cut').click();
+    await expect(page.locator('.sh-mark-count')).toContainText('Đã đánh dấu 2 câu');
     await page.locator('.sh-mark-done').click();
 
     await expect(page.locator('.sh-mark')).toBeHidden();
     await expect(page.locator('.sh-transport')).toBeVisible();
     await expect(page.locator('.sh-card')).toHaveAttribute('data-phase', 'idle');
-    // two marked sentences, then the rest of the 13 s video in 4 s parts
-    const rows = page.locator('.sh-row');
-    expect(await rows.count()).toBeGreaterThanOrEqual(4);
+    expect(await page.evaluate(() => (window as any).__yt.playing)).toBe(false);
+    expect(await page.locator('.sh-row').count()).toBeGreaterThanOrEqual(3);
+    // the first sentence was practised once
+    await expect(page.locator('.sh-row[data-i="0"]')).toHaveClass(/done/);
+
     const lesson = await page.evaluate(() => JSON.parse(localStorage.getItem('shootwords.shadowLessons.v1')!)[0]);
     expect(lesson.segments[0].start).toBe(0);
     expect(lesson.segments[0].end).toBeGreaterThan(1);
     expect(lesson.segments[0].end).toBeLessThan(2);
+    expect(lesson.segments[1].start).toBe(lesson.segments[0].end);
     expect(lesson.segments[1].end).toBeGreaterThan(2.3);
-    expect(lesson.segments[1].end).toBeLessThan(3.6);
+    expect(lesson.liveAnchor).toBe(lesson.segments[1].end);
     expect(lesson.segments[lesson.segments.length - 1].end).toBe(13);
-    expect(await page.evaluate(() => (window as any).__yt.playing)).toBe(false);
 
-    // marking again (from the ✂ control this time) and cancelling keeps the sentences
-    const count = await rows.count();
+    // the ✂ control goes on from where it stopped; leaving keeps the sentences
+    const count = await page.locator('.sh-row').count();
     await page.locator('.sh-textmode').click();
     await expect(page.locator('.sh-mark')).toBeVisible();
-    await page.locator('.sh-mark-cancel').click();
-    await expect(rows).toHaveCount(count);
+    await expect(page.locator('.sh-mark-count')).toContainText('Đã đánh dấu 2 câu');
+    await page.locator('.sh-mark-done').click();
+    await expect(page.locator('.sh-row')).toHaveCount(count);
+
+    // a new length cuts only what is left
+    await page.locator('.sh-settings-btn').click();
+    await page.locator('.sh-choice[data-name="chunkSeconds"] .sh-chip[data-value="6"]').click();
+    await page.locator('.sh-sheet-close').click();
+    const after = await page.evaluate(() => JSON.parse(localStorage.getItem('shootwords.shadowLessons.v1')!)[0]);
+    expect(after.segments[0].end).toBe(lesson.segments[0].end);
+    expect(after.segments[1].end).toBe(lesson.segments[1].end);
+  });
+
+  test('the video keeps playing, quietly and slowly, on the learner\'s turn', async ({ page }) => {
+    await setup(page, { lessons: [NO_TEXT], lastGame: 'shadow', prefs: { ...FAST, softPause: true } });
+    await page.goto('./');
+    await page.locator('.sh-lesson-open').click();
+    await expect(page.locator('.sh-play')).toBeEnabled();
+    await page.locator('.sh-play').click();
+    // a lesson without text starts by marking: take the first sentence
+    await page.waitForTimeout(1500);
+    await page.locator('.sh-mark-cut').click();
+    await expect(page.locator('.sh-card')).toHaveAttribute('data-phase', 'gap', { timeout: 5000 });
+    const held = await page.evaluate(() => {
+      const yt = (window as any).__yt;
+      return { playing: yt.playing, muted: yt.muted, rate: yt.rate };
+    });
+    expect(held).toEqual({ playing: true, muted: true, rate: 0.25 });
+    await expect(page.locator('.sh-status')).toContainText('Đang nghe', { timeout: 6000 });
+    const back = await page.evaluate(() => {
+      const yt = (window as any).__yt;
+      return { muted: yt.muted, rate: yt.rate };
+    });
+    expect(back).toEqual({ muted: false, rate: 1 });
   });
 
   test('length of parts, and splitting a part', async ({ page }) => {
