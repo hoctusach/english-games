@@ -22,8 +22,19 @@ function umami(): Umami | undefined {
   return (window as unknown as { umami?: Umami }).umami;
 }
 
+// The Google Play app (a Trusted Web Activity) opens with an android-app:// referrer
+// and sends no stats at all: it is offered to children as well.
+function insideAndroidApp(): boolean {
+  try {
+    if (document.referrer.startsWith('android-app://')) sessionStorage.setItem('shootwords.twa', '1');
+    return sessionStorage.getItem('shootwords.twa') === '1';
+  } catch {
+    return false;
+  }
+}
+
 export function initAnalytics(): void {
-  if (!UMAMI_WEBSITE_ID || !import.meta.env.PROD) return;
+  if (!UMAMI_WEBSITE_ID || !import.meta.env.PROD || insideAndroidApp()) return;
   const script = document.createElement('script');
   script.defer = true;
   script.src = UMAMI_SCRIPT;

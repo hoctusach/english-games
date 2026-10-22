@@ -1,5 +1,4 @@
 import type { LessonLevel } from '@/shadowing/types';
-import tedCutts30Days from '@/shadowing/transcripts/tedCutts30Days';
 
 // Videos picked for shadowing, by level. Those with a `videoId` (found through web
 // search; official channel uploads where there is one) can be practised at once
@@ -166,11 +165,10 @@ export const SUGGESTIONS: VideoSuggestion[] = [
     channel: 'TED',
     minutes: 4,
     videoId: 'UNP03fDSj1U',
-    transcript: tedCutts30Days,
     query: 'TED Matt Cutts Try something new for 30 days',
     topic: { vi: 'Thói quen', en: 'Habits' },
     note: {
-      vi: 'Ngắn, dễ nghe, phụ đề TED chuẩn — bài TED đầu tiên lý tưởng.',
+      vi: 'Ngắn, dễ nghe, có phụ đề TED chuẩn — bài TED đầu tiên lý tưởng.',
       en: 'Short and easy to follow, with TED subtitles — an ideal first talk.',
     },
   },
