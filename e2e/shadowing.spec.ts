@@ -82,6 +82,12 @@ test.describe('entry', () => {
     await setup(page);
     await page.goto('./?home=1');
     await expect(page.locator('.game-tile')).toHaveCount(2);
+    // both tiles stay inside the page, whatever the width
+    const edges = await page.evaluate(() => ({
+      tiles: [...document.querySelectorAll('.game-tile')].map((t) => t.getBoundingClientRect().right),
+      box: document.querySelector('.game-switch')!.getBoundingClientRect().right,
+    }));
+    for (const right of edges.tiles) expect(right).toBeLessThanOrEqual(edges.box + 0.5);
     await page.locator('.game-tile-shadow').click();
     await expect(page.locator('.sh-home h1')).toHaveText('Shadowing');
     await expect(page.locator('.sh-suggest').first()).toBeVisible();

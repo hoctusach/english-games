@@ -1421,11 +1421,12 @@ label.field {
 
 .game-switch {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 8px;
 }
 
 .game-tile {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 10px;
