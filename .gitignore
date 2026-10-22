@@ -5,3 +5,9 @@ dist
 test-results/
 playwright-report/
 public/ocr/
+
+android/*.keystore
+android/*.jks
+android/build/
+android/*.aab
+android/*.apk
