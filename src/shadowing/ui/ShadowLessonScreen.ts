@@ -18,8 +18,9 @@ import {
   type ShadowPrefs,
 } from '@/shadowing/lessonStore';
 import { SegmentPlayer, type PlayerSnapshot } from '@/shadowing/SegmentPlayer';
+import { LiveMarker, type LiveSnapshot } from '@/shadowing/LiveMarker';
 import { loadYouTubeApi, YouTubeMedia, type PlayerErrorKind } from '@/shadowing/youtubePlayer';
-import { chunkByTime, formatClock, mergeWithNext, removeSegment, segmentsFromMarks, splitSegment } from '@/shadowing/segment';
+import { chunkByTime, formatClock, mergeWithNext, removeSegment, splitSegment } from '@/shadowing/segment';
 import { maskWord, timedWords, type TimedWord } from '@/shadowing/textMask';
 import { watchUrl } from '@/shadowing/youtubeUrl';
 import { st } from '@/shadowing/strings';
@@ -95,7 +96,7 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
           </div>
           <div class="sh-mark-foot">
             <span class="sh-mark-count" aria-live="polite"></span>
-            <button class="btn btn-link sh-mark-cancel" type="button">${st('markCancel')}</button>
+            <button class="btn btn-link sh-mark-pause" type="button">${st('markPause')}</button>
           </div>
         </div>
       </div>
@@ -176,8 +177,13 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
   const segments = (): Segment[] => lesson.segments;
   // no transcript: pieces cut by time or by the player's own marks, no text to show
   const textless = lesson.source === 'none';
-  let marking = false;
-  let marks: number[] = [];
+  // learning and marking sentences at once (see LiveMarker)
+  let live: LiveMarker | null = null;
+  let liveSnap: LiveSnapshot | null = null;
+  // sentences the lesson had before this marking session
+  let liveBase = 0;
+  // marking was left in this visit: ▶ now practises the parts as they are
+  let liveLeft = false;
   let durationTries = 0;
 
   markStartBtn.hidden = !textless;
@@ -233,14 +239,10 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
             }
           },
           onError: (kind) => failed(errorMessage(kind), kind === 'other'),
-          onExternalPlay: () => {
-            if (!marking) player?.externalPlay();
-          },
-          onExternalPause: () => {
-            if (!marking) player?.externalPause();
-          },
-          onEnded: () => (marking ? finishMarking() : player?.externalEnded()),
-        });
+          onExternalPlay: () => (live ? live.externalPlay() : player?.externalPlay()),
+          onExternalPause: () => (live ? live.externalPause() : player?.externalPause()),
+          onEnded: () => (live ? live.externalEnded() : player?.externalEnded()),
+        }, { captions: textless });
       },
       () => {
         if (!destroyed) failed(st('apiError'), true);
@@ -264,7 +266,14 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
     player = new SegmentPlayer(
       media,
       segments(),
-      { mode: prefs.mode, rate: prefs.rate, repeat: prefs.repeat, gapFactor: prefs.gapFactor, autoNext: prefs.autoNext },
+      {
+        mode: prefs.mode,
+        rate: prefs.rate,
+        repeat: prefs.repeat,
+        gapFactor: prefs.gapFactor,
+        autoNext: prefs.autoNext,
+        softHold: prefs.softPause,
+      },
       { onChange, onSegmentDone, onFinished },
       snap.index,
     );
@@ -275,8 +284,9 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
     drawControls();
   }
 
-  // A new set of pieces (re-cut by time, or marked by hand): progress starts over.
-  function replaceSegments(next: Segment[], index: number): void {
+  // A new set of pieces (re-cut by time): progress starts over, except for the first
+  // `keep` sentences (the ones marked by hand).
+  function replaceSegments(next: Segment[], index: number, keep = 0): void {
     if (!next.length) return;
     try {
       lesson = updateLesson(lesson.id, { segments: next }) ?? lesson;
@@ -284,7 +294,7 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
       alert(err instanceof StorageFullError ? st('storageFull') : String(err));
       return;
     }
-    progress.reps = next.map(() => 0);
+    progress.reps = next.map((_, i) => (i < keep ? progress.reps[i] ?? 0 : 0));
     progress.last = index;
     saveNow();
     if (player) {
@@ -303,6 +313,11 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
   // ---------- player events ----------
 
   function onChange(next: PlayerSnapshot): void {
+    if (live) {
+      // the card belongs to the marking session meanwhile
+      snap = next;
+      return;
+    }
     const moved = next.index !== snap.index;
     snap = next;
     if (moved) {
@@ -401,7 +416,7 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
   function statusText(): string {
     switch (snap.phase) {
       case 'idle':
-        return st('statusIdle');
+        return textless && lesson.liveAnchor === undefined ? st('statusIdleLive') : st('statusIdle');
       case 'paused':
         return st('statusPaused');
       case 'gap':
@@ -551,7 +566,12 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
     const now = performance.now();
     const dt = Math.min(1, (now - lastTick) / 1000);
     lastTick = now;
-    if (marking) {
+    if (live) {
+      live.tick();
+      if (liveSnap && (liveSnap.phase === 'listening' || liveSnap.phase === 'practising')) {
+        progress.seconds += dt;
+        sessionSeconds += dt;
+      }
       drawMarkCount();
       return;
     }
@@ -572,11 +592,19 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
 
   // ---------- controls ----------
 
+  function togglePlay(): void {
+    if (!player || !ready) return;
+    if (live) live.toggle();
+    // a lesson without transcript starts by learning and marking at once
+    else if (textless && lesson.liveAnchor === undefined && !liveLeft && snap.phase === 'idle') startLive();
+    else player.toggle();
+  }
+
   const act = (fn: (p: SegmentPlayer) => void) => () => {
     if (player && ready) fn(player);
   };
 
-  playBtn.addEventListener('click', act((p) => p.toggle()));
+  playBtn.addEventListener('click', () => togglePlay());
   prevBtn.addEventListener('click', act((p) => p.prev()));
   nextBtn.addEventListener('click', act((p) => p.next()));
   replayBtn.addEventListener(
@@ -616,7 +644,7 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
     drawSentence();
     drawControls();
   };
-  textBtn.addEventListener('click', () => (textless ? startMarking() : cycleText()));
+  textBtn.addEventListener('click', () => (textless ? startLive() : cycleText()));
 
   card.addEventListener('click', () => {
     if (textless || prefs.textMode === 'show') return;
@@ -699,6 +727,8 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
         v < 1 ? st('gapShort') : v > 1 ? st('gapLong') : st('gapMedium'),
       )}</div>
       <label class="sh-switch"><input type="checkbox" class="sh-auto"${prefs.autoNext ? ' checked' : ''}><span>${st('autoNext')}</span></label>
+      <label class="sh-switch"><input type="checkbox" class="sh-soft"${prefs.softPause ? ' checked' : ''}><span>${st('softPause')}</span></label>
+      <p class="sh-hint">${st('softPauseHint')}</p>
       ${
         textless
           ? `<div class="sh-field"><span>${st('chunkLength')}</span>${choice('chunkSeconds', CHUNK_SECONDS, prefs.chunkSeconds, (v) => st('seconds', v))}</div>
@@ -722,7 +752,7 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
     if (target === sheet || target.closest('.sh-sheet-close')) return closeSheet();
     if (target.closest('.sh-sheet-mark')) {
       closeSheet();
-      startMarking();
+      startLive();
       return;
     }
     const chip = target.closest<HTMLButtonElement>('.sh-choice .sh-chip');
@@ -731,8 +761,12 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
       chip.parentElement!.querySelectorAll('.sh-chip').forEach((c) => c.classList.toggle('active', c === chip));
       if (value === prefs.chunkSeconds || !media) return;
       setPref('chunkSeconds', value);
+      if (live) return;
       const duration = media.duration() || segments()[segments().length - 1]?.end || 0;
-      replaceSegments(chunkByTime(0, duration, value), 0);
+      // only what is not marked yet is cut again
+      const anchor = lesson.liveAnchor ?? 0;
+      const kept = segments().filter((seg) => seg.end <= anchor + 0.01);
+      replaceSegments([...kept, ...chunkByTime(anchor, duration, value)], snap.index < kept.length ? snap.index : kept.length, kept.length);
       return;
     }
     if (chip) {
@@ -746,84 +780,125 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
   });
   sheet.addEventListener('change', (event) => {
     const input = event.target as HTMLInputElement;
+    if (input.classList.contains('sh-soft')) {
+      setPref('softPause', input.checked);
+      player?.updateSettings({ softHold: input.checked });
+      live?.updateSettings({ softHold: input.checked });
+      return;
+    }
     if (!input.classList.contains('sh-auto')) return;
     setPref('autoNext', input.checked);
     player?.updateSettings({ autoNext: input.checked });
   });
 
-  // ---------- marking sentences by hand (no transcript) ----------
+  // ---------- learning and marking at once (no transcript) ----------
 
-  // the time between hearing a sentence end and tapping
-  const REACTION_SECONDS = 0.2;
+  const videoLength = (): number => media?.duration() || segments()[segments().length - 1]?.end || 0;
 
-  function startMarking(): void {
-    if (!player || !media || !ready) return;
+  function startLive(): void {
+    if (!player || !media || !ready || live) return;
     player.reset(snap.index);
-    marking = true;
-    marks = [];
+    const anchor = lesson.liveAnchor ?? 0;
+    liveBase = segments().filter((seg) => seg.end <= anchor + 0.01).length;
+    live = new LiveMarker(
+      media,
+      { rate: prefs.rate, gapFactor: prefs.gapFactor, softHold: prefs.softPause },
+      { onChange: onLiveChange, onCut: onLiveCut, onUncut: onLiveUncut, onPractised: onLivePractised, onFinished: () => finishLive(true) },
+      anchor,
+      videoLength(),
+      liveBase,
+    );
+    liveSnap = live.snapshot();
     wrap.classList.add('sh-marking');
     markPanel.hidden = false;
-    statusEl.textContent = st('markStatus');
     hideFinish();
-    media.seek(0);
-    media.play();
+    live.start();
     drawMarkCount();
     $<HTMLButtonElement>('.sh-mark-cut').focus();
   }
 
-  function cutHere(): void {
-    if (!marking || !media) return;
-    const t = media.time() - REACTION_SECONDS;
-    const last = marks[marks.length - 1] ?? 0;
-    if (t - last < 0.5) return;
-    marks.push(t);
-    drawMarkCount();
-    const cut = $('.sh-mark-cut');
-    cut.classList.remove('sh-pop');
-    void cut.offsetWidth;
-    cut.classList.add('sh-pop');
-  }
-
-  function undoCut(): void {
-    marks.pop();
+  function onLiveChange(next: LiveSnapshot): void {
+    liveSnap = next;
+    const phase = next.phase;
+    const gap = next.practice?.phase === 'gap';
+    statusEl.textContent =
+      phase === 'practising' ? (gap ? st('statusYourTurn') : st('liveReplay')) : phase === 'paused' ? st('statusPaused') : phase === 'ended' ? st('statusEnded') : st('liveListen');
+    card.dataset.phase = phase === 'practising' ? (gap ? 'gap' : 'playing') : phase === 'paused' ? 'paused' : 'playing';
+    $<HTMLButtonElement>('.sh-mark-cut').disabled = phase !== 'listening';
+    $('.sh-mark-pause').textContent = phase === 'paused' ? st('markResume') : st('markPause');
     drawMarkCount();
   }
 
-  function stopMarking(): void {
-    marking = false;
+  // Saves the lesson as: the sentences marked so far, then the rest of the video in parts.
+  function saveLive(next: Segment[], index: number, anchor: number): boolean {
+    try {
+      lesson = updateLesson(lesson.id, { segments: next, liveAnchor: anchor }) ?? lesson;
+    } catch (err) {
+      alert(err instanceof StorageFullError ? st('storageFull') : String(err));
+      return false;
+    }
+    progress.reps = segments().map((_, i) => (i <= index ? progress.reps[i] ?? 0 : 0));
+    progress.last = index;
+    saveNow();
+    snap = { ...snap, index };
+    textEl.dataset.key = '';
+    drawSentence();
+    drawList();
+    return true;
+  }
+
+  function onLiveCut(cut: Segment, index: number): void {
+    const next = [...segments().slice(0, index), cut, ...chunkByTime(cut.end, videoLength(), prefs.chunkSeconds)];
+    saveLive(next, index, cut.end);
+    const button = $('.sh-mark-cut');
+    button.classList.remove('sh-pop');
+    void button.offsetWidth;
+    button.classList.add('sh-pop');
+  }
+
+  function onLiveUncut(index: number, anchor: number): void {
+    const next = [...segments().slice(0, index), ...chunkByTime(anchor, videoLength(), prefs.chunkSeconds)];
+    saveLive(next, Math.max(0, index - 1), anchor);
+  }
+
+  function onLivePractised(index: number): void {
+    progress.reps[index] = (progress.reps[index] ?? 0) + 1;
+    dirty = true;
+    listEl.querySelector(`.sh-row[data-i="${index}"]`)?.classList.add('done');
+  }
+
+  function finishLive(ended: boolean): void {
+    if (!live) return;
+    live.stop();
+    live = null;
+    liveSnap = null;
+    liveLeft = true;
     wrap.classList.remove('sh-marking');
     markPanel.hidden = true;
-    media?.pause();
+    const index = Math.max(0, Math.min(snap.index, segments().length - 1));
+    snap = { ...snap, index, phase: 'idle' };
+    player?.setSegments(segments(), index);
+    player?.reset(index);
+    textEl.dataset.key = '';
+    drawSentence();
     drawStatus();
-  }
-
-  function finishMarking(): void {
-    if (!marking || !media) return;
-    const duration = media.duration() || segments()[segments().length - 1]?.end || 0;
-    const kept = marks.slice();
-    stopMarking();
-    if (!kept.length) {
-      player?.reset(snap.index);
-      return;
-    }
-    replaceSegments(segmentsFromMarks(kept, duration, prefs.chunkSeconds), 0);
-    track('shadow_marked', { sentences: kept.length });
-  }
-
-  function cancelMarking(): void {
-    stopMarking();
-    player?.reset(snap.index);
+    drawControls();
+    drawList();
+    saveNow();
+    track('shadow_marked', { sentences: segments().filter((seg) => seg.end <= (lesson.liveAnchor ?? 0) + 0.01).length });
+    if (ended) showFinish();
   }
 
   function drawMarkCount(): void {
-    markCount.textContent = st('markCount', marks.length, formatClock(media?.time() ?? 0));
+    const marked = liveSnap ? liveBase + liveSnap.cuts : liveBase;
+    markCount.textContent = st('markCount', marked, formatClock(media?.time() ?? 0));
   }
 
-  markStartBtn.addEventListener('click', startMarking);
-  $('.sh-mark-cut').addEventListener('click', cutHere);
-  $('.sh-mark-undo').addEventListener('click', undoCut);
-  $('.sh-mark-done').addEventListener('click', finishMarking);
-  $('.sh-mark-cancel').addEventListener('click', cancelMarking);
+  markStartBtn.addEventListener('click', startLive);
+  $('.sh-mark-cut').addEventListener('click', () => live?.cut());
+  $('.sh-mark-undo').addEventListener('click', () => live?.undo());
+  $('.sh-mark-pause').addEventListener('click', () => live?.toggle());
+  $('.sh-mark-done').addEventListener('click', () => finishLive(false));
 
   // ---------- finishing ----------
 
@@ -867,16 +942,18 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
   const onKey = (event: KeyboardEvent) => {
     const target = event.target as HTMLElement;
     if (target.closest('input, textarea, select') || event.metaKey || event.ctrlKey || event.altKey) return;
-    if (marking) {
+    if (live) {
       if (event.key === ' ' || event.key === 'Enter') {
         event.preventDefault();
         if (document.activeElement instanceof HTMLButtonElement) document.activeElement.blur();
-        cutHere();
+        live.cut();
       } else if (event.key === 'Backspace') {
         event.preventDefault();
-        undoCut();
+        live.undo();
+      } else if (event.key === 'p' || event.key === 'P') {
+        live.toggle();
       } else if (event.key === 'Escape') {
-        cancelMarking();
+        finishLive(false);
       }
       return;
     }
@@ -894,7 +971,7 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
     switch (event.key) {
       case ' ':
       case 'k':
-        return run(act((p) => p.toggle()));
+        return run(togglePlay);
       case 'ArrowLeft':
         return run(act((p) => p.prev()));
       case 'ArrowRight':
@@ -913,8 +990,9 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
   // the video stops when the app goes to the background; so does the loop
   const onVisibility = () => {
     if (document.visibilityState !== 'hidden' || !player) return;
-    if (marking) {
-      cancelMarking();
+    if (live) {
+      if (liveSnap?.phase === 'listening') live.toggle();
+      saveNow();
       return;
     }
     if (snap.phase === 'playing') player.toggle();
@@ -943,6 +1021,7 @@ export function renderShadowLesson(root: HTMLElement, app: App, lessonId: string
       window.removeEventListener('pagehide', onPageHide);
       saveNow();
       if (sessionSeconds > 5) track('shadow_session', { minutes: Math.round(sessionSeconds / 60), sentences: segments().length });
+      live = null;
       media?.destroy();
       media = null;
       player = null;

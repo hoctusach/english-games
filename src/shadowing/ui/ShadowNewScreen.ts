@@ -50,13 +50,17 @@ export function renderShadowNew(root: HTMLElement, app: App, suggestionId?: stri
           <li>${st('guide3')}</li>
           <li>${st('guide4')}</li>
         </ol>
+        <p class="sh-hint"><b>${st('guideOcrTitle')}</b> ${st('guideOcr')}</p>
         <p class="sh-hint">${st('guideTip')}</p>
       </details>
       <textarea id="sh-transcript" class="sh-input sh-textarea" rows="7" spellcheck="false" placeholder="${escapeHtml(st('transcriptPlaceholder'))}"></textarea>
       <div class="sh-file-row">
+        <button class="btn btn-sm sh-ocr-btn" type="button">${st('ocrBtn')}</button>
         <button class="btn btn-sm sh-file-btn" type="button">${st('fileBtn')}</button>
         <input class="sh-file" type="file" accept=".srt,.vtt,.txt,text/vtt,application/x-subrip,text/plain" hidden>
+        <input class="sh-ocr-input" type="file" accept="image/*" multiple hidden>
       </div>
+      <div class="sh-ocr-status" aria-live="polite"></div>
       <div class="sh-parse-status" aria-live="polite"></div>
       <div class="sh-preview"></div>
     </section>
@@ -77,6 +81,9 @@ export function renderShadowNew(root: HTMLElement, app: App, suggestionId?: stri
   const textarea = wrap.querySelector<HTMLTextAreaElement>('#sh-transcript')!;
   const fileInput = wrap.querySelector<HTMLInputElement>('.sh-file')!;
   const parseStatus = wrap.querySelector<HTMLDivElement>('.sh-parse-status')!;
+  const ocrBtn = wrap.querySelector<HTMLButtonElement>('.sh-ocr-btn')!;
+  const ocrInput = wrap.querySelector<HTMLInputElement>('.sh-ocr-input')!;
+  const ocrStatus = wrap.querySelector<HTMLDivElement>('.sh-ocr-status')!;
   const preview = wrap.querySelector<HTMLDivElement>('.sh-preview')!;
   const titleInput = wrap.querySelector<HTMLInputElement>('#sh-title')!;
   const levels = wrap.querySelector<HTMLDivElement>('.sh-levels')!;
@@ -204,6 +211,50 @@ export function renderShadowNew(root: HTMLElement, app: App, suggestionId?: stri
     parseNow();
   });
 
+  // Screenshots of YouTube's transcript panel, read on the device (see ocr/ocrRunner).
+  let ocrAbort: AbortController | null = null;
+  ocrBtn.addEventListener('click', () => ocrInput.click());
+  ocrInput.addEventListener('change', async () => {
+    const files = Array.from(ocrInput.files ?? []).filter((f) => f.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp)$/i.test(f.name));
+    ocrInput.value = '';
+    if (!files.length) return;
+    ocrAbort?.abort();
+    const abort = new AbortController();
+    ocrAbort = abort;
+    ocrBtn.disabled = true;
+    const progress = (done: number, total: number, label: string) => {
+      const pct = total ? Math.round((done / total) * 100) : 0;
+      ocrStatus.innerHTML = `<p class="sh-hint">${label}</p><div class="sh-ocr-bar" aria-hidden="true"><span style="width:${pct}%"></span></div>`;
+    };
+    progress(0, files.length, st('ocrLoading'));
+    try {
+      const { readScreenshots } = await import('@/shadowing/ocr/ocrRunner');
+      const result = await readScreenshots(
+        files,
+        (p) => progress(p.done, p.total, p.stage === 'loading' ? st('ocrLoading') : st('ocrReading', Math.min(p.done + 1, p.total), p.total)),
+        abort.signal,
+      );
+      if (abort.signal.aborted) return;
+      if (!result.entries.length) {
+        ocrStatus.innerHTML = `<p class="sh-bad">${st('ocrNone')}</p>`;
+        return;
+      }
+      textarea.value = result.text;
+      parseNow();
+      const gaps = result.gaps
+        .slice(0, 4)
+        .map((g) => `<p class="sh-bad">${st('ocrGap', formatClock(g.from), formatClock(g.to))}</p>`)
+        .join('');
+      ocrStatus.innerHTML = `<p class="sh-good">${st('ocrDone', result.images, result.entries.length)}</p>${gaps}<p class="sh-hint">${st('ocrCheck')}</p>`;
+      track('shadow_ocr', { images: result.images, lines: result.entries.length, gaps: result.gaps.length });
+    } catch (err) {
+      if (abort.signal.aborted) return;
+      ocrStatus.innerHTML = `<p class="sh-bad">${st('ocrError')}</p>`;
+    } finally {
+      if (ocrAbort === abort) ocrBtn.disabled = false;
+    }
+  });
+
   // ---- step 3: name and level ----
   titleInput.addEventListener('input', () => {
     titleTouched = true;
@@ -272,6 +323,7 @@ export function renderShadowNew(root: HTMLElement, app: App, suggestionId?: stri
   return {
     destroy() {
       window.clearTimeout(parseTimer);
+      ocrAbort?.abort();
     },
   };
 }

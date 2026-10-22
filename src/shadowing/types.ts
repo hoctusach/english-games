@@ -35,6 +35,9 @@ export interface ShadowLesson {
   updatedAt: number;
   // set when the lesson was made from a suggested video
   suggestionId?: string;
+  // lesson without transcript: the video is marked into sentences up to this time (the
+  // sentences end there); what comes after is cut by time. Unset until marking starts.
+  liveAnchor?: number;
 }
 
 export type ShadowMode = 'repeat' | 'shadow';

@@ -128,7 +128,7 @@ describe('progress', () => {
 describe('prefs', () => {
   it('falls back to defaults for unknown values', () => {
     storage.setItem(SHADOW_PREFS_KEY, JSON.stringify({ mode: 'shadow', rate: 3, repeat: 2, gapFactor: 'x', autoNext: false, textMode: 'hint' }));
-    expect(loadPrefs()).toEqual({ mode: 'shadow', rate: 1, repeat: 2, gapFactor: 1, autoNext: false, textMode: 'hint', chunkSeconds: 4 });
+    expect(loadPrefs()).toEqual({ mode: 'shadow', rate: 1, repeat: 2, gapFactor: 1, autoNext: false, textMode: 'hint', chunkSeconds: 4, softPause: true });
     savePrefs({ ...loadPrefs(), rate: 0.75 });
     expect(loadPrefs().rate).toBe(0.75);
   });
@@ -142,5 +142,7 @@ describe('lessons without transcript', () => {
     expect(getLesson(lesson.id)?.segments.length).toBe(1);
     expect(loadLessonProgress('x', 0)).toMatchObject({ reps: [], last: 0 });
     expect(loadPrefs().chunkSeconds).toBe(4);
+    updateLesson(lesson.id, { liveAnchor: 12.3456 });
+    expect(getLesson(lesson.id)?.liveAnchor).toBe(12.35);
   });
 });

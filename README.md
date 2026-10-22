@@ -111,6 +111,12 @@ plays them in the embedded YouTube player:
 Lessons, progress and settings are saved in `localStorage` like the word sets (and are
 part of backups). The code lives in `src/shadowing/` and loads only when Shadowing opens.
 
+### Better sentences without a transcript
+
+- **Learn and mark at once** — on a lesson without text, press ▶: the video plays on, tap ✂ at the end of each sentence; that sentence plays again, you say it, and the video goes on. Marks are saved (`liveAnchor`) and the rest of the video stays in time parts. Undo takes the last mark back.
+- **Read a transcript from screenshots** — in "New lesson", pick screenshots of YouTube's Transcript panel; the text is read on the device (tesseract.js, WebAssembly, no upload) and merged by timestamp.
+- **Keep the video playing on your turn** (Settings, on by default) — instead of pausing, the video goes on muted at 0.25×, so YouTube's pause panel never covers the captions. Lessons without text also open with YouTube's captions on. Needs a check on a real phone.
+
 ## Tests
 
 ```sh
