@@ -161,6 +161,7 @@ export class LiveMarker {
 
   externalPlay(): void {
     if (this.phase === 'paused') this.setPhase('listening');
+    else if (this.phase === 'practising') this.inner.externalPlay();
   }
 
   externalEnded(): void {

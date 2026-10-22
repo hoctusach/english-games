@@ -182,6 +182,23 @@ describe('learn and mark', () => {
     expect(marker.snapshot().phase).toBe('listening');
   });
 
+  it('follows the video started from its own controls during the replay', () => {
+    const marker = make();
+    marker.start();
+    run(marker, 3);
+    marker.cut();
+    run(marker, 0.5);
+    media.pause();
+    marker.externalPause();
+    expect(marker.snapshot().practice?.phase).toBe('paused');
+    media.play();
+    marker.externalPlay();
+    expect(marker.snapshot().practice?.phase).toBe('playing');
+    run(marker, 6);
+    expect(practised).toEqual([0]);
+    expect(marker.snapshot().phase).toBe('listening');
+  });
+
   it('skips the learner’s turn', () => {
     const marker = make();
     marker.start();
